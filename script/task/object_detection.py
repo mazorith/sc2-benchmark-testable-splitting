@@ -111,10 +111,10 @@ def log_info(*args, **kwargs):
     if is_main_process() or force:
         logger.info(*args, **kwargs)
 
-
+#Adding default Nones to for client side execution
 @torch.inference_mode()
-def evaluate(model_wo_ddp, data_loader, iou_types, device, device_ids, distributed, no_dp_eval=False,
-             log_freq=1000, title=None, header='Test:'):
+def evaluate(model_wo_ddp, data_loader=None, iou_types=None, device=None, device_ids=None, distributed=None, no_dp_eval=False,
+             log_freq=1000, title=None, header='Test:', is_server=False):
     model = model_wo_ddp.to(device)
     if distributed and not no_dp_eval:
         model = DistributedDataParallel(model, device_ids=device_ids)
@@ -137,37 +137,67 @@ def evaluate(model_wo_ddp, data_loader, iou_types, device, device_ids, distribut
     cpu_device = torch.device('cpu')
     model.eval()
     analyzable = check_if_analyzable(model_wo_ddp)
+    #Will need to rework metric logger to account for new metrics of transfer time and client/server model times
     metric_logger = MetricLogger(delimiter='  ')
-    coco = get_coco_api_from_dataset(data_loader.dataset)
-    if iou_types is None or (isinstance(iou_types, (list, tuple)) and len(iou_types) == 0):
-        iou_types = get_iou_types(model)
 
-    coco_evaluator = CocoEvaluator(coco, iou_types)
-    for sample_batch, targets in metric_logger.log_every(data_loader, log_freq, header):
-        sample_batch = list(image.to(device) for image in sample_batch)
-        targets = [{k: v.to(device) for k, v in t.items()} for t in targets]
-        torch.cuda.synchronize()
-        model_time = time.time()
-        outputs = model(sample_batch)
+    if is_server:
+        coco = get_coco_api_from_dataset(data_loader.dataset)
+        if iou_types is None or (isinstance(iou_types, (list, tuple)) and len(iou_types) == 0):
+            iou_types = get_iou_types(model)
 
-        outputs = [{k: v.to(cpu_device) for k, v in t.items()} for t in outputs]
-        model_time = time.time() - model_time
+        coco_evaluator = CocoEvaluator(coco, iou_types)
+    #TODO: rework this forloop to send the batch of TCP to client and then wait for a message of the 
+    #bottlenecked output 
+        for sample_batch, targets in metric_logger.log_every(data_loader, log_freq, header):
 
-        res = {target['image_id'].item(): output for target, output in zip(targets, outputs)}
-        evaluator_time = time.time()
-        coco_evaluator.update(res)
-        evaluator_time = time.time() - evaluator_time
-        metric_logger.update(model_time=model_time, evaluator_time=evaluator_time)
+            #send sample_batch to client
+
+
+            sample_batch = list(image.to(device) for image in sample_batch)
+            targets = [{k: v.to(device) for k, v in t.items()} for t in targets]
+            torch.cuda.synchronize()
+
+            #wait and get message from client, pass to server model (also calculate sent/receive from client to sever)
+
+            model_time = time.time()
+            outputs = model(sample_batch)
+
+            outputs = [{k: v.to(cpu_device) for k, v in t.items()} for t in outputs]
+            model_time = time.time() - model_time
+
+            res = {target['image_id'].item(): output for target, output in zip(targets, outputs)}
+            evaluator_time = time.time()
+            coco_evaluator.update(res)
+            evaluator_time = time.time() - evaluator_time
+            metric_logger.update(model_time=model_time, evaluator_time=evaluator_time)
+
+        #send finished message
+    else:
+        end_dataset = False
+        while not end_dataset:
+            #pause, wait, and collect messages over TCP
+            #check type of message
+            inputs = None #placeholder
+
+            model_time = time.time()
+            outputs = model(inputs)
+            model_time = time.time() - model_time
+
+            #send encoded data over to server
+
+            metric_logger.update(model_time=model_time)
 
     # gather the stats from all processes
     metric_logger.synchronize_between_processes()
     avg_stats_str = 'Averaged stats: {}'.format(metric_logger)
     logger.info(avg_stats_str)
-    coco_evaluator.synchronize_between_processes()
+    
+    if is_server:
+        coco_evaluator.synchronize_between_processes()
 
-    # accumulate predictions from all images
-    coco_evaluator.accumulate()
-    coco_evaluator.summarize()
+        # accumulate predictions from all images
+        coco_evaluator.accumulate()
+        coco_evaluator.summarize()
 
     # Revert print function
     __builtin__.print = builtin_print
@@ -175,7 +205,11 @@ def evaluate(model_wo_ddp, data_loader, iou_types, device, device_ids, distribut
     torch.set_num_threads(n_threads)
     if analyzable and model_wo_ddp.activated_analysis:
         model_wo_ddp.summarize()
-    return coco_evaluator
+        
+    if is_server:
+        return coco_evaluator
+    else:
+        return
 
 
 def train(teacher_model, student_model, dataset_dict, ckpt_file_path, device, device_ids, distributed, config, args):
@@ -232,6 +266,11 @@ def train(teacher_model, student_model, dataset_dict, ckpt_file_path, device, de
 
 
 def main(args):
+
+    #Modifications 1: Hardcode define if client or server
+    is_server = False
+    #end modifications 1
+
     log_file_path = args.log
     if is_main_process() and log_file_path is not None:
         setup_log_file(os.path.expanduser(log_file_path))
@@ -246,34 +285,71 @@ def main(args):
         logger.info('Overwriting config')
         overwrite_config(config, json.loads(args.json))
 
-    device = torch.device(args.device)
-    dataset_dict = util.get_all_datasets(config['datasets'])
+    #Was having trouble passing cpu in though the parser, if this doesn't work will temporarily
+    #remove the ability to pass in device to function load_model function 
+    
+    #device = torch.device(args.device)
+    device = torch.device("cpu")
+
+    #Modifications 2: If server load dataset and ignore the loading of a teacher model
+    if(is_server):
+        dataset_dict = util.get_all_datasets(config['datasets'])
     models_config = config['models']
-    teacher_model_config = models_config.get('teacher_model', None)
-    teacher_model = load_model(teacher_model_config, device) if teacher_model_config is not None else None
+    #teacher_model_config = models_config.get('teacher_model', None)
+    #teacher_model = load_model(teacher_model_config, device) if teacher_model_config is not None else None)
+
+    #end Modifications 2
+
     student_model_config =\
         models_config['student_model'] if 'student_model' in models_config else models_config['model']
     ckpt_file_path = student_model_config.get('ckpt', None)
+
+    #modifcations 3: Load model, reduce to encoder for client and from decoder on for server
+    
+    #TODO: create TCP functionality to communicate between client and server for when both models are ready
+
     student_model = load_model(student_model_config, device)
+
+    #initally hardcoding BaseRCNN model from first coco yaml file to test functionality 
+
+    if(is_server):
+        student_model = torch.nn.Sequential(*list(student_model.children())[1:])
+        student_model.backbone.body.bottleneck_layer = torch.nn.Sequential(*list(student_model.backbone.body.bottleneck_layer.children())[1:])
+    else:    
+        student_model = torch.nn.Sequential(*list(student_model.children())[:2])
+        student_model.backbone.body = torch.nn.Sequential(torch.nn.Sequential(*list(student_model.backbone.body.children())[:1]))
+        student_model.backbone.body.bottleneck_layer = torch.nn.Sequential(torch.nn.Sequential(*list(student_model.backbone.body.bottleneck_layer.children())[:1]))
+
+    print(student_model)
+
+    #end modifications 3
+
     if args.log_config:
         logger.info(config)
 
-    if not args.test_only:
-        train(teacher_model, student_model, dataset_dict, ckpt_file_path, device, device_ids, distributed, config, args)
-        student_model_without_ddp =\
-            student_model.module if module_util.check_if_wrapped(student_model) else student_model
-        load_ckpt(student_model_config['ckpt'], model=student_model_without_ddp, strict=True)
+    #Commenting this out to force the test_only case
+
+    # if not args.test_only:
+    #     train(teacher_model, student_model, dataset_dict, ckpt_file_path, device, device_ids, distributed, config, args)
+    #     student_model_without_ddp =\
+    #         student_model.module if module_util.check_if_wrapped(student_model) else student_model
+    #     load_ckpt(student_model_config['ckpt'], model=student_model_without_ddp, strict=True)
 
     test_config = config['test']
     test_data_loader_config = test_config['test_data_loader']
+
+    #TODO: make dataloader optional for client
     test_data_loader = util.build_data_loader(dataset_dict[test_data_loader_config['dataset_id']],
                                               test_data_loader_config, distributed)
     log_freq = test_config.get('log_freq', 1000)
     no_dp_eval = args.no_dp_eval
     iou_types = args.iou_types
-    if not args.student_only and teacher_model is not None:
-        evaluate(teacher_model, test_data_loader, iou_types, device, device_ids, distributed, no_dp_eval=no_dp_eval,
-                 log_freq=log_freq, title='[Teacher: {}]'.format(teacher_model_config['name']))
+
+    # The splitable mode is student no need to evalute teacher at this time
+
+    # if not args.student_only and teacher_model is not None:
+    #     evaluate(teacher_model, test_data_loader, iou_types, device, device_ids, distributed, no_dp_eval=no_dp_eval,
+    #              log_freq=log_freq, title='[Teacher: {}]'.format(teacher_model_config['name']))
 
     if check_if_updatable_detection_model(student_model):
         student_model.update()
@@ -281,7 +357,7 @@ def main(args):
     if check_if_analyzable(student_model):
         student_model.activate_analysis()
     evaluate(student_model, test_data_loader, iou_types, device, device_ids, distributed, no_dp_eval=no_dp_eval,
-             log_freq=log_freq, title='[Student: {}]'.format(student_model_config['name']))
+             log_freq=log_freq, title='[Student: {}]'.format(student_model_config['name']), is_server=is_server)
 
 
 if __name__ == '__main__':

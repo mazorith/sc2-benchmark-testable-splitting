@@ -1,8 +1,50 @@
+import os
 import sys
+import cv2
+import numpy as np
+from params import PARAMS
+import torch
 
-def get_message_size(message):
-    '''returns memory allocated for a dictionary with a singular tensor stored in message['data']'''
-    x = {k : v for k, v in message.items() if k != 'data'}
-    data_size = message['data'].nelement() * message['data'].element_size()
+def extract_frames(cap, frame_limit) -> np.ndarray:
+    '''From a cv2 VideoCapture, return a random frame_limit subset of the video'''
+    # get 15 frames from random starting point
+    video_length = cap.get(7)
+    # print(video_length, frame_limit)
+    assert video_length > frame_limit
+    random_start = int(np.random.random() * (video_length - frame_limit))
+    frames = []
+    for i in range(random_start, random_start + frame_limit):
+        cap.set(1, i)
+        _, frame = cap.read()
+        frames.append(frame)
 
-    return sys.getsizeof(x) + data_size
+    return np.array(frames)
+
+def return_frames_as_bytes(frames : np.ndarray, temp_dir = PARAMS['DEV_DIR'], codec='avc1', fps = PARAMS['FPS'],
+                           shape = PARAMS['VIDEO_SHAPE'], frame_limit = PARAMS['FRAME_LIMIT']) -> bytes:
+    '''From a numpy array of frames (nframes x h x w x 3), return the compressed video (with a specific codec) as bytes'''
+    temp_fname = f'{temp_dir}/temp_{codec}.mp4'
+    fourcc = cv2.VideoWriter_fourcc(*codec)
+
+    out = cv2.VideoWriter(temp_fname, fourcc, fps, shape)
+    for i in range(frame_limit):
+        out.write(frames[i, ...])
+    out.release()
+
+    with open(temp_fname, 'rb') as f:
+        byte_image = f.read()
+
+    os.remove(temp_fname)
+
+    return byte_image
+
+def decode_bytes(byte_video, temp_dir = PARAMS['DEV_DIR']) -> cv2.VideoCapture:
+    '''From bytes, return a cv2.VideoCapture'''
+    temp_fname = f'{temp_dir}/temp'
+    with open(temp_fname, 'wb') as f:
+        f.write(byte_video)
+
+    cap = cv2.VideoCapture(temp_fname)
+    os.remove(temp_fname)
+
+    return cap

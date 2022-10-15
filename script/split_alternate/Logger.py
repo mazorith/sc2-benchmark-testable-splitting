@@ -27,9 +27,6 @@ class DictionaryStatsLogger:
         self.flush_limit = flush_limit
         self.curr_dict = {}
 
-        with open(self.logfile, 'a') as f:
-            f.write('NEW LOGGING SESSION\n')
-
     def push_log(self, log : {}, append = False):
         '''adds the log to the list, will automatically periodically flush.
         append = True if you want to append the list to the log'''
@@ -50,5 +47,5 @@ class DictionaryStatsLogger:
         if len(self.stats) == 0:
             return
 
-        with open(self.logfile, 'a') as f:
+        with open(self.logfile, 'w') as f:
             f.write('\n'.join(str(stat) for stat in self.stats))

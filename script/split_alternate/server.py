@@ -5,7 +5,7 @@ import time
 import sys
 from socket import *
 from struct import pack, unpack
-from params import PARAMS
+from params import PARAMS, CURR_DATE
 from Logger import ConsoleLogger, DictionaryStatsLogger
 from utils import *
 
@@ -20,7 +20,7 @@ class ServerProtocol:
         self.connection = None
         self.data = None
         self.logger = ConsoleLogger()
-        self.stats_logger = DictionaryStatsLogger(f"{PARAMS['STATS_LOG_DIR']}/server.log")
+        self.stats_logger = DictionaryStatsLogger(f"{PARAMS['STATS_LOG_DIR']}/server {CURR_DATE}.log")
 
     def listen(self, server_ip, server_port):
         self.socket = socket(AF_INET, SOCK_STREAM)
@@ -34,10 +34,10 @@ class ServerProtocol:
         handshake = self.connection.recv(1)
 
         if handshake == b'\00':
-            self.logger.log_info('Successfully recived client Handshake; sending handshake back')
+            self.logger.log_info('Successfully received client Handshake; sending handshake back')
             connection.sendall(b'\00')
         else:
-            self.logger.log_error('Message recived not client handshake')
+            self.logger.log_error('Message received not client handshake')
 
     def start(self, server_ip, server_port):
         self.logger.log_info('Starting server')
@@ -70,8 +70,7 @@ class ServerProtocol:
         latency = time.time() - timestamp
 
         self.logger.log_info(f'Received data with latency {round(latency, 4)}; sending message back')
-        self.stats_logger.push_log({'latency' : round(latency, 4), 'data_size' : data.nelement() * data.element_size(),
-                                    'message_size' : get_message_size(message)}, append=False)
+        self.stats_logger.push_log({'latency' : round(latency, 4)}, append=False)
         self.connection.sendall(b'\00')
 
         return data
@@ -81,7 +80,7 @@ class ServerProtocol:
             while True:
                 time.sleep(1)
                 data = self.handle_encoder_data() # data  .shape
-                self.logger.log_debug(f'Data has shape {data.shape}; processing data')
+                self.logger.log_debug(f'Processing data')
 
                 curr_time = time.time()
                 process_data(data)

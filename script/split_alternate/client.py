@@ -4,9 +4,10 @@ import torch
 import pickle
 import time
 import sys
-from params import PARAMS
+from params import PARAMS, CURR_DATE
 from Logger import ConsoleLogger, DictionaryStatsLogger
 from utils import *
+from data import Dataset
 
 def create_input(data):
     return data
@@ -17,7 +18,8 @@ class ClientProtocol:
         self.socket = None
         self.data = None
         self.logger = ConsoleLogger()
-        self.stats_logger = DictionaryStatsLogger(logfile=f"{PARAMS['STATS_LOG_DIR']}/client.log")
+        self.stats_logger = DictionaryStatsLogger(logfile=f"{PARAMS['STATS_LOG_DIR']}/client {CURR_DATE}.log")
+        self.dataset = Dataset()
 
     def connect(self, server_ip, server_port):
         self.logger.log_debug('Connecting from client')
@@ -68,21 +70,17 @@ class ClientProtocol:
 
     def send_data(self):
         # TODO: replace with actual dataloader
-        for i in range(10):
+        for i, d in enumerate(self.dataset.get_dataset()):
+            data, (size_orig, size_compressed) = d
             self.logger.log_info(f'Starting iteration {i}')
 
-            shape = [200,200,200]
-
             now = time.time()
-            data = create_input(torch.rand(shape))
             input_time = time.time() - now
             message = {'timestamp': time.time(), 'data': data}
-            message_size = get_message_size(message)
 
-            self.stats_logger.push_log({'input_time' : input_time, 'message_size' : message_size}, append=True)
-
-            self.logger.log_info(
-                f'Generated random tensor with size {shape} and bytesize {message_size}')
+            self.stats_logger.push_log({'input_time' : input_time, 'message_size' : size_compressed,
+                                        'original_size' : size_orig}, append=True)
+            self.logger.log_info(f'Generated message with bytesize {size_compressed} and original {size_orig}')
 
             self.send_encoder_data(message)
 

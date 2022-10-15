@@ -18,7 +18,7 @@ class ClientProtocol:
         self.socket = None
         self.data = None
         self.logger = ConsoleLogger()
-        self.stats_logger = DictionaryStatsLogger(logfile=f"{PARAMS['STATS_LOG_DIR']}/client {CURR_DATE}.log")
+        self.stats_logger = DictionaryStatsLogger(logfile=f"{PARAMS['STATS_LOG_DIR']}/client-{CURR_DATE}.log")
         self.dataset = Dataset()
 
     def connect(self, server_ip, server_port):
@@ -70,26 +70,35 @@ class ClientProtocol:
 
     def send_data(self):
         # TODO: replace with actual dataloader
-        for i, d in enumerate(self.dataset.get_dataset()):
-            data, (size_orig, size_compressed) = d
-            self.logger.log_info(f'Starting iteration {i}')
+        try:
+            for i, d in enumerate(self.dataset.get_dataset()):
+                data, (size_orig, size_compressed) = d
+                self.logger.log_info(f'Starting iteration {i}')
 
-            now = time.time()
-            input_time = time.time() - now
-            message = {'timestamp': time.time(), 'data': data}
+                now = time.time()
+                input_time = time.time() - now
+                message = {'timestamp': time.time(), 'data': data}
 
-            self.stats_logger.push_log({'input_time' : input_time, 'message_size' : size_compressed,
-                                        'original_size' : size_orig}, append=True)
-            self.logger.log_info(f'Generated message with bytesize {size_compressed} and original {size_orig}')
+                self.stats_logger.push_log({'input_time' : input_time, 'message_size' : size_compressed,
+                                            'original_size' : size_orig}, append=True)
+                self.logger.log_info(f'Generated message with bytesize {size_compressed} and original {size_orig}')
 
-            self.send_encoder_data(message)
+                self.send_encoder_data(message)
 
-        self.close()
+            self.close()
+
+        except Exception as ex:
+            self.logger.log_error(ex)
+
+        finally:
+            self.logger.log_info("Client loop ended.")
+            self.close()
 
 
     def close(self):
         self.socket.shutdown(SHUT_WR)
         self.socket.close()
+        self.stats_logger.flush()
         self.socket = None
 
 #main functionality for testing/debugging

@@ -20,4 +20,4 @@ PARAMS['FRAME_LIMIT'] = 15
 PARAMS['FPS'] = 30.
 PARAMS['VIDEO_SHAPE'] = (1280,720)
 
-CURR_DATE = datetime.now().strftime('%m/%d %H:%M:%S')
+CURR_DATE = datetime.now().strftime('%m-%d_%H:%M:%S')

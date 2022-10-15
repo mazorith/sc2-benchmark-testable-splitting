@@ -9,7 +9,6 @@ def extract_frames(cap, frame_limit) -> np.ndarray:
     '''From a cv2 VideoCapture, return a random frame_limit subset of the video'''
     # get 15 frames from random starting point
     video_length = cap.get(7)
-    # print(video_length, frame_limit)
     assert video_length > frame_limit
     random_start = int(np.random.random() * (video_length - frame_limit))
     frames = []

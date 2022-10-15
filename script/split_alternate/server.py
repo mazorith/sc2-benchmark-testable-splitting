@@ -20,7 +20,7 @@ class ServerProtocol:
         self.connection = None
         self.data = None
         self.logger = ConsoleLogger()
-        self.stats_logger = DictionaryStatsLogger(f"{PARAMS['STATS_LOG_DIR']}/server {CURR_DATE}.log")
+        self.stats_logger = DictionaryStatsLogger(f"{PARAMS['STATS_LOG_DIR']}/server-{CURR_DATE}.log")
 
     def listen(self, server_ip, server_port):
         self.socket = socket(AF_INET, SOCK_STREAM)

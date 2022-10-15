@@ -5,7 +5,7 @@ import numpy as np
 from params import PARAMS
 import torch
 
-def extract_frames(cap, frame_limit) -> np.ndarray:
+def extract_frames(cap, frame_limit) -> (bool, np.ndarray):
     '''From a cv2 VideoCapture, return a random frame_limit subset of the video'''
     # get 15 frames from random starting point
     video_length = cap.get(7)
@@ -14,10 +14,13 @@ def extract_frames(cap, frame_limit) -> np.ndarray:
     frames = []
     for i in range(random_start, random_start + frame_limit):
         cap.set(1, i)
-        _, frame = cap.read()
-        frames.append(frame)
+        ret, frame = cap.read()
+        if ret:
+            frames.append(frame)
+        else:
+            return False, None
 
-    return np.array(frames)
+    return True, np.array(frames)
 
 def return_frames_as_bytes(frames : np.ndarray, temp_dir = PARAMS['DEV_DIR'], codec='avc1', fps = PARAMS['FPS'],
                            shape = PARAMS['VIDEO_SHAPE'], frame_limit = PARAMS['FRAME_LIMIT']) -> bytes:

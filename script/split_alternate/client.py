@@ -68,24 +68,22 @@ class ClientProtocol:
             self.socket.sendall(b'\00')
             self.data = pickle.loads(data)
 
-    def send_data(self):
+    def send_loop(self):
         # TODO: replace with actual dataloader
         try:
+            now = time.time()
             for i, d in enumerate(self.dataset.get_dataset()):
                 data, (size_orig, size_compressed) = d
                 self.logger.log_info(f'Starting iteration {i}')
 
-                now = time.time()
                 input_time = time.time() - now
                 message = {'timestamp': time.time(), 'data': data}
 
                 self.stats_logger.push_log({'input_time' : input_time, 'message_size' : size_compressed,
                                             'original_size' : size_orig}, append=True)
                 self.logger.log_info(f'Generated message with bytesize {size_compressed} and original {size_orig}')
-
                 self.send_encoder_data(message)
-
-            self.close()
+                now = time.time()
 
         except Exception as ex:
             self.logger.log_error(ex)
@@ -106,4 +104,4 @@ if __name__ == '__main__':
 
     cp = ClientProtocol()
     cp.start(PARAMS['HOST'], PARAMS['PORT'])
-    cp.send_data()
+    cp.send_loop()

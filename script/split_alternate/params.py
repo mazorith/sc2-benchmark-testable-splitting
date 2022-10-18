@@ -15,9 +15,10 @@ PARAMS['FLUSH_LIMIT'] = 100
 PARAMS['DEV_DIR'] = 'dev'
 PARAMS['DATA_DIR'] = 'Data'
 
-PARAMS['DATASET'] = 'bdd'
+PARAMS['DATASET'] = 'davis'
 PARAMS['FRAME_LIMIT'] = 15
 PARAMS['FPS'] = 30.
 PARAMS['VIDEO_SHAPE'] = (1280,720)
+PARAMS['DAVIS_SCENES'] = [1,2,3,4,5,6,7,8,9,10]
 
 CURR_DATE = datetime.now().strftime('%m-%d_%H:%M:%S')

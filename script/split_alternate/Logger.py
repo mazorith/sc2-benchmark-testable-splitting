@@ -1,5 +1,4 @@
 from params import LEVELS, PARAMS
-import time
 from datetime import datetime
 
 class ConsoleLogger:
@@ -47,5 +46,5 @@ class DictionaryStatsLogger:
         if len(self.stats) == 0:
             return
 
-        with open(self.logfile, 'w') as f:
-            f.write('\n'.join(str(stat) for stat in self.stats))
+        with open(self.logfile, 'a') as f:
+            f.write('\n'.join(str(stat) for stat in self.stats) + '\n')

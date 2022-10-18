@@ -3,9 +3,8 @@ import sys
 import cv2
 import numpy as np
 from params import PARAMS
-import torch
 
-def extract_frames(cap, frame_limit) -> (bool, np.ndarray):
+def extract_frames(cap, frame_limit, vid_shape = PARAMS['VIDEO_SHAPE']) -> (bool, np.ndarray):
     '''From a cv2 VideoCapture, return a random frame_limit subset of the video'''
     # get 15 frames from random starting point
     video_length = cap.get(7)
@@ -16,7 +15,7 @@ def extract_frames(cap, frame_limit) -> (bool, np.ndarray):
         cap.set(1, i)
         ret, frame = cap.read()
         if ret:
-            frames.append(frame)
+            frames.append(cv2.resize(frame, dsize=vid_shape))
         else:
             return False, None
 
@@ -42,7 +41,7 @@ def return_frames_as_bytes(frames : np.ndarray, temp_dir = PARAMS['DEV_DIR'], co
 
 def decode_bytes(byte_video, temp_dir = PARAMS['DEV_DIR']) -> cv2.VideoCapture:
     '''From bytes, return a cv2.VideoCapture'''
-    temp_fname = f'{temp_dir}/temp'
+    temp_fname = f'{temp_dir}/temp.mp4'
     with open(temp_fname, 'wb') as f:
         f.write(byte_video)
 

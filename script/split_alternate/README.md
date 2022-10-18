@@ -4,6 +4,8 @@ Data is sent as a dictionary, where it would be `d['data']`
 for simple bytes but `d['data_tensor']` for pytorch tensors
 since those require different measurements. 
 
+Additionally, add symlinks for Data/ and dev/ to this directory.
+
 Basic Usage:
 
 ```python server.py```

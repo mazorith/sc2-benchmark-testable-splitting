@@ -10,8 +10,8 @@ from Logger import ConsoleLogger, DictionaryStatsLogger
 from utils import *
 
 def process_data(data):
-    # print(data)
-    return 0
+    cap = decode_bytes(data)
+    return cap
 
 class ServerProtocol:
 
@@ -20,7 +20,7 @@ class ServerProtocol:
         self.connection = None
         self.data = None
         self.logger = ConsoleLogger()
-        self.stats_logger = DictionaryStatsLogger(f"{PARAMS['STATS_LOG_DIR']}/server-{CURR_DATE}.log")
+        self.stats_logger = DictionaryStatsLogger(f"{PARAMS['STATS_LOG_DIR']}/server-{PARAMS['DATASET']}-{CURR_DATE}.log")
 
     def listen(self, server_ip, server_port):
         self.socket = socket(AF_INET, SOCK_STREAM)
@@ -77,6 +77,7 @@ class ServerProtocol:
 
     def start_server_loop(self):
         try:
+            iteration_num = 0
             while True:
                 time.sleep(1)
                 data = self.handle_encoder_data() # data  .shape
@@ -86,7 +87,8 @@ class ServerProtocol:
                 process_data(data)
                 process_time = round(time.time() - curr_time, 4)
 
-                self.stats_logger.push_log({'processing_time' : process_time}, append=True)
+                self.stats_logger.push_log({'processing_time' : process_time, 'iteration' : iteration_num}, append=True)
+                iteration_num += 1
 
         except Exception as ex:
             self.logger.log_error(ex)

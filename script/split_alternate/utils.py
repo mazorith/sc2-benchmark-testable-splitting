@@ -15,6 +15,7 @@ def extract_frames(cap, frame_limit, vid_shape = PARAMS['VIDEO_SHAPE']) -> (bool
         cap.set(1, i)
         ret, frame = cap.read()
         if ret:
+            assert frame.shape[0] >= vid_shape[1] and frame.shape[1] >= vid_shape[0]
             frames.append(cv2.resize(frame, dsize=vid_shape))
         else:
             return False, None

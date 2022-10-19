@@ -12,6 +12,8 @@ class Dataset:
             self.dataset = self.get_bdd_dataset()
         elif dataset == 'virat':
             self.dataset = self.get_virat_dataset()
+        elif dataset == 'yc2':
+            self.dataset = self.get_youcook2_dataset()
         else:
             raise ValueError('Dataset not found.')
 
@@ -64,6 +66,28 @@ class Dataset:
                     continue
 
                 frames_byte_size = sys.getsizeof(frames) * shape[1] * shape[0] / frames.shape[2] / frames.shape[1]
+
+                byte_frames = return_frames_as_bytes(frames, codec=codec)
+                yield byte_frames, (frames_byte_size, len(byte_frames))
+
+    def get_youcook2_dataset(self, codec='avc1', frame_limit=PARAMS['FRAME_LIMIT'], shape=PARAMS['VIDEO_SHAPE']):
+        yc2_dir = f'{self.data_dir}/YouCook2/raw_videos/validation'
+        dirs = [f'{yc2_dir}/{x}' for x in sorted(os.listdir(yc2_dir)) if len(x)==3] # 3 digit codes usually, this is hardcoded but gets past .DS_Store files
+        fnames = []
+        for dir in dirs:
+            fnames += [f'{dir}/{x}' for x in sorted(os.listdir(dir)) if '.webm' in x]
+
+        for fname in fnames:
+            for i in range(5):
+                self.logger.log_debug(fname)
+                cap = cv2.VideoCapture(fname)
+                success, frames = extract_frames(cap, frame_limit=frame_limit)
+
+                if not success:
+                    self.logger.log_debug(f'OpenCV Failed on file {fname}')
+                    continue
+
+                frames_byte_size = sys.getsizeof(frames)
 
                 byte_frames = return_frames_as_bytes(frames, codec=codec)
                 yield byte_frames, (frames_byte_size, len(byte_frames))

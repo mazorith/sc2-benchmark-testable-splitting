@@ -18,7 +18,7 @@ class ClientProtocol:
         self.socket = None
         self.data = None
         self.logger = ConsoleLogger()
-        self.stats_logger = DictionaryStatsLogger(logfile=f"{PARAMS['STATS_LOG_DIR']}/client-{CURR_DATE}.log")
+        self.stats_logger = DictionaryStatsLogger(logfile=f"{PARAMS['STATS_LOG_DIR']}/client-{PARAMS['DATASET']}-{CURR_DATE}.log")
         self.dataset = Dataset()
 
     def connect(self, server_ip, server_port):

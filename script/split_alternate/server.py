@@ -108,10 +108,10 @@ class ServerProtocol:
         #print(ack)
 
     def close(self):
+        self.stats_logger.flush()
         self.connection.shutdown(SHUT_WR)
         self.connection.close()
         self.socket.close()
-        self.stats_logger.flush()
         self.socket = None
 
 #main functionality for testing/debugging

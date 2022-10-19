@@ -4,18 +4,21 @@ import cv2
 import numpy as np
 from params import PARAMS
 
-def extract_frames(cap, frame_limit, vid_shape = PARAMS['VIDEO_SHAPE']) -> (bool, np.ndarray):
+def extract_frames(cap, frame_limit, vid_shape = PARAMS['VIDEO_SHAPE'], transpose_frame = False) -> (bool, np.ndarray):
     '''From a cv2 VideoCapture, return a random frame_limit subset of the video'''
     # get 15 frames from random starting point
     video_length = cap.get(7)
-    assert video_length > frame_limit
+    assert video_length > frame_limit, "Video is too small in length"
     random_start = int(np.random.random() * (video_length - frame_limit))
     frames = []
     for i in range(random_start, random_start + frame_limit):
         cap.set(1, i)
         ret, frame = cap.read()
         if ret:
-            assert frame.shape[0] >= vid_shape[1] and frame.shape[1] >= vid_shape[0]
+            if transpose_frame:
+                frame = frame.transpose(1,0,2)
+            assert frame.shape[0] >= vid_shape[1] and frame.shape[1] >= vid_shape[0], \
+                f"Video dimensions too small: {frame.shape}"
             frames.append(cv2.resize(frame, dsize=vid_shape))
         else:
             return False, None

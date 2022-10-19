@@ -73,30 +73,29 @@ class ClientProtocol:
         try:
             now = time.time()
             for i, d in enumerate(self.dataset.get_dataset()):
-                data, (size_orig, size_compressed) = d
+                data, (size_orig, size_compressed), fname = d
                 self.logger.log_info(f'Starting iteration {i}')
 
                 input_time = time.time() - now
                 message = {'timestamp': time.time(), 'data': data}
 
                 self.stats_logger.push_log({'input_time' : input_time, 'message_size' : size_compressed,
-                                            'original_size' : size_orig, 'iteration' : i}, append=True)
+                                            'original_size' : size_orig, 'iteration' : i, 'fname' : fname}, append=True)
                 self.logger.log_info(f'Generated message with bytesize {size_compressed} and original {size_orig}')
                 self.send_encoder_data(message)
                 now = time.time()
 
         except Exception as ex:
-            self.logger.log_error(ex)
+            self.logger.log_error(str(ex))
 
         finally:
             self.logger.log_info("Client loop ended.")
             self.close()
 
-
     def close(self):
+        self.stats_logger.flush()
         self.socket.shutdown(SHUT_WR)
         self.socket.close()
-        self.stats_logger.flush()
         self.socket = None
 
 #main functionality for testing/debugging

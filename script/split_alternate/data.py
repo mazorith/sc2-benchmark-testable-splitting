@@ -14,6 +14,8 @@ class Dataset:
             self.dataset = self.get_virat_dataset()
         elif dataset == 'yc2':
             self.dataset = self.get_youcook2_dataset()
+        elif dataset == 'phone':
+            self.dataset = self.get_phone_dataset()
         else:
             raise ValueError('Dataset not found.')
 
@@ -48,7 +50,7 @@ class Dataset:
 
             num_success += 1
             byte_frames = return_frames_as_bytes( frames, codec=codec )
-            yield byte_frames, (int(frames_byte_size), sys.getsizeof(byte_frames))
+            yield byte_frames, (int(frames_byte_size), sys.getsizeof(byte_frames)), full_fname
 
     def get_virat_dataset(self, codec='avc1', frame_limit = PARAMS['FRAME_LIMIT'], shape = PARAMS['VIDEO_SHAPE']):
         virat_dir = f'{self.data_dir}/VIRAT'
@@ -68,7 +70,7 @@ class Dataset:
                 frames_byte_size = sys.getsizeof(frames) * shape[1] * shape[0] / frames.shape[2] / frames.shape[1]
 
                 byte_frames = return_frames_as_bytes(frames, codec=codec)
-                yield byte_frames, (frames_byte_size, len(byte_frames))
+                yield byte_frames, (frames_byte_size, len(byte_frames)), full_fname
 
     def get_youcook2_dataset(self, codec='avc1', frame_limit=PARAMS['FRAME_LIMIT'], shape=PARAMS['VIDEO_SHAPE']):
         yc2_dir = f'{self.data_dir}/YouCook2/raw_videos/validation'
@@ -90,7 +92,27 @@ class Dataset:
                 frames_byte_size = sys.getsizeof(frames)
 
                 byte_frames = return_frames_as_bytes(frames, codec=codec)
-                yield byte_frames, (frames_byte_size, len(byte_frames))
+                yield byte_frames, (frames_byte_size, len(byte_frames)), fname
+
+    def get_phone_dataset(self, codec='avc1', frame_limit=PARAMS['FRAME_LIMIT'], shape=PARAMS['VIDEO_SHAPE']):
+        p_dir = f'{self.data_dir}/Phone'
+        fnames = [x for x in os.listdir(p_dir) if '.MOV' in x]
+
+        for fname in fnames:
+            for i in range(10):
+                full_fname = f'{p_dir}/{fname}'
+                self.logger.log_debug(full_fname)
+                cap = cv2.VideoCapture(full_fname)
+                success, frames = extract_frames(cap, frame_limit=frame_limit, transpose_frame=True)
+
+                if not success:
+                    self.logger.log_debug(f'OpenCV Failed on file {fname}')
+                    continue
+
+                frames_byte_size = sys.getsizeof(frames) * shape[1] * shape[0] / frames.shape[2] / frames.shape[1]
+
+                byte_frames = return_frames_as_bytes(frames, codec=codec)
+                yield byte_frames, (frames_byte_size, len(byte_frames)), full_fname
 
     def get_davis_dataset(self, codec='avc1', frame_limit = PARAMS['FRAME_LIMIT']):
         pass

@@ -69,6 +69,9 @@ class ServerProtocol:
 
         latency = time.time() - timestamp
 
+        if latency <= 1e-2:
+            self.logger.log_debug(f'Message sent at timestamp {timestamp} and received with latency {latency}')
+
         self.logger.log_info(f'Received data with latency {round(latency, 4)}; sending message back')
         self.stats_logger.push_log({'latency' : round(latency, 4)}, append=False)
         self.connection.sendall(b'\00')
@@ -86,6 +89,8 @@ class ServerProtocol:
                 curr_time = time.time()
                 process_data(data)
                 process_time = round(time.time() - curr_time, 4)
+
+                self.send_response('')
 
                 self.stats_logger.push_log({'processing_time' : process_time, 'iteration' : iteration_num}, append=True)
                 iteration_num += 1

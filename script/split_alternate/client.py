@@ -79,10 +79,14 @@ class ClientProtocol:
                 input_time = time.time() - now
                 message = {'timestamp': time.time(), 'data': data}
 
-                self.stats_logger.push_log({'input_time' : input_time, 'message_size' : size_compressed,
+                self.stats_logger.push_log({'encode_time' : input_time, 'message_size' : size_compressed,
                                             'original_size' : size_orig, 'iteration' : i, 'fname' : fname}, append=True)
                 self.logger.log_info(f'Generated message with bytesize {size_compressed} and original {size_orig}')
                 self.send_encoder_data(message)
+                # wait for response
+                self.handle_input_data()
+
+                time.sleep(1) # try
                 now = time.time()
 
         except Exception as ex:

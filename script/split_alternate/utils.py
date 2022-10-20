@@ -8,7 +8,9 @@ def extract_frames(cap, frame_limit, vid_shape = PARAMS['VIDEO_SHAPE'], transpos
     '''From a cv2 VideoCapture, return a random frame_limit subset of the video'''
     # get 15 frames from random starting point
     video_length = cap.get(7)
-    assert video_length > frame_limit, "Video is too small in length"
+    if video_length < frame_limit:
+        return False, None
+
     random_start = int(np.random.random() * (video_length - frame_limit))
     frames = []
     for i in range(random_start, random_start + frame_limit):
@@ -17,8 +19,10 @@ def extract_frames(cap, frame_limit, vid_shape = PARAMS['VIDEO_SHAPE'], transpos
         if ret:
             if transpose_frame:
                 frame = frame.transpose(1,0,2)
-            assert frame.shape[0] >= vid_shape[1] and frame.shape[1] >= vid_shape[0], \
-                f"Video dimensions too small: {frame.shape}"
+
+            if not (frame.shape[0] >= vid_shape[1] and frame.shape[1] >= vid_shape[0]):
+                return False, None
+
             frames.append(cv2.resize(frame, dsize=vid_shape))
         else:
             return False, None

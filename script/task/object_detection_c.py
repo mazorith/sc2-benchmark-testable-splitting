@@ -46,12 +46,12 @@ class Identity3(torch.nn.Module):
         x = h
         return x
 
-class Identity2(torch.nn.Module):
+class image_pass_layer(torch.nn.Module):
     def __init__(self):
         super().__init__()
         
     def forward(self, x,y=None):
-        return x
+        return x[0].tensors
 
 class Identity(torch.nn.Module):
     def __init__(self):
@@ -232,6 +232,7 @@ def evaluate(model_wo_ddp, data_loader=None, iou_types=None, device=None, device
                 print(model_time)
 
                 data_size = sys.getsizeof(outputs)
+                print(outputs.shape)
                 print(data_size)
 
                 send_time = time.time()
@@ -327,10 +328,10 @@ def main(args):
     is_server = False
 
     if is_server:
-        sp.listen('128.195.54.126', 55555)
+        sp.listen('127.0.0.1', 55555) #128.195.54.126
         sp.server_handshake()
     else:
-        cp.connect('128.195.54.126', 55555)
+        cp.connect('127.0.0.1', 55555) #128.195.54.126
         cp.client_handshake()
 
     #end modifications 1
@@ -377,6 +378,11 @@ def main(args):
         student_model = torch.nn.Sequential(*list(student_model.children())[1:])
         student_model.backbone.body.bottleneck_layer = torch.nn.Sequential(*list(student_model.backbone.body.bottleneck_layer.children())[1:])
     else:    
+        m1 = student_model.transform
+        m2 = student_model.backbone.body.bottleneck_layer.encoder
+
+        student_model = torch.nn.Sequential(m1, image_pass_layer(), m2)
+        
         # modules1 = list(student_model.children())[:1]
         # #modules2 = list(student_model.backbone.children())[:1]
         # #modules3 = list(student_model.backbone.body.children())[:1]
@@ -384,27 +390,27 @@ def main(args):
 
         # student_model = torch.nn.Sequential(*[*modules1, *modules4])#(*[*modules1, *modules2, *modules3, *modules4])
 
-        student_model.transform = GeneralizedRCNNTransform(min_size=(800,), max_size=1333, image_mean=[0.485, 0.456, 0.406], image_std=[0.229, 0.224, 0.225])
+        # student_model.transform = GeneralizedRCNNTransform(min_size=(800,), max_size=1333, image_mean=[0.485, 0.456, 0.406], image_std=[0.229, 0.224, 0.225])
         
-        student_model.rpn = Identity() #torch.nn.Identity()
-        student_model.roi_heads = Identity() #torch.nn.Identity()
+        # student_model.rpn = Identity() #torch.nn.Identity()
+        # student_model.roi_heads = Identity() #torch.nn.Identity()
         
-        student_model.backbone.fpn = Identity() #torch.nn.Identity()
+        # student_model.backbone.fpn = Identity() #torch.nn.Identity()
 
-        student_model.backbone.body.layer1 = Identity() #torch.nn.Identity()
-        student_model.backbone.body.layer2 = Identity() #torch.nn.Identity()
-        student_model.backbone.body.layer3 = Identity() #torch.nn.Identity()
-        student_model.backbone.body.layer4 = Identity() #torch.nn.Identity()
+        # student_model.backbone.body.layer1 = Identity() #torch.nn.Identity()
+        # student_model.backbone.body.layer2 = Identity() #torch.nn.Identity()
+        # student_model.backbone.body.layer3 = Identity() #torch.nn.Identity()
+        # student_model.backbone.body.layer4 = Identity() #torch.nn.Identity()
 
-        student_model.backbone.body.bottleneck_layer.decoder = Identity() #torch.nn.Identity()
-        #student_model.backbone.body.bottleneck_layer.encoder[0] = torch.nn.Conv2d(3, 64, kernel_size=(7, 7), stride=(2, 2), padding=(3, 3), bias=False)
+        # student_model.backbone.body.bottleneck_layer.decoder = Identity() #torch.nn.Identity()
+        # #student_model.backbone.body.bottleneck_layer.encoder[0] = torch.nn.Conv2d(3, 64, kernel_size=(7, 7), stride=(2, 2), padding=(3, 3), bias=False)
 
-        student_model = torch.nn.Sequential(*list(student_model.children())[:2])
-        #student_model = torch.nn.Sequential(*list(student_model.children())[1:])
-        # print(student_model, "MODEL_TEST")
-        student_model[1] = torch.nn.Sequential(*list(student_model[1].body.children())[:1])
-        #print(student_model, "MODEL_TEST")
-        student_model[1] = torch.nn.Sequential(*list(student_model[1][0].children())[:1])
+        # student_model = torch.nn.Sequential(*list(student_model.children())[:2])
+        # #student_model = torch.nn.Sequential(*list(student_model.children())[1:])
+        # # print(student_model, "MODEL_TEST")
+        # student_model[1] = torch.nn.Sequential(*list(student_model[1].body.children())[:1])
+        # #print(student_model, "MODEL_TEST")
+        # student_model[1] = torch.nn.Sequential(*list(student_model[1][0].children())[:1])
 
     print(student_model)
     #end modifications 3

@@ -33,16 +33,15 @@ from sc2bench.models.detection.base import check_if_updatable_detection_model
 from sc2bench.models.detection.registry import load_detection_model
 from sc2bench.models.detection.wrapper import get_wrapped_detection_model
 
-class Identity(torch.nn.Module):
+class transformIdentity(torch.nn.Module):
     def __init__(self):
         super().__init__()
         
-    def forward(self, x):
-        return x
+    def forward(self, x, y = None):
+        return x, y
 
 logger = def_logger.getChild(__name__)
 torch.multiprocessing.set_sharing_strategy('file_system')
-
 
 def get_argparser():
     parser = argparse.ArgumentParser(description='Supervised compression for object detection tasks')
@@ -124,7 +123,7 @@ def log_info(*args, **kwargs):
 
 #Adding default Nones to for client side execution
 @torch.inference_mode()
-def evaluate(model_wo_ddp, data_loader=None, iou_types=None, device=None, device_ids=None, distributed=None, no_dp_eval=False,
+def evaluate(model_wo_ddp, transformLayer, data_loader=None, iou_types=None, device=None, device_ids=None, distributed=None, no_dp_eval=False,
              log_freq=1000, title=None, header='Test:', is_server=False, protocall = None):
     model = model_wo_ddp.to(device)
     if distributed and not no_dp_eval:
@@ -165,11 +164,16 @@ def evaluate(model_wo_ddp, data_loader=None, iou_types=None, device=None, device
             #print(sample_batch)
             protocall.send_input_data(sample_batch)
 
+            in_tup = transformLayer(sample_batch)
+            #print(in_tup)
+
             #targets = [{k: v.to(device) for k, v in t.items()} for t in targets]
             
             #wait and get message from client, pass to server model (also calculate sent/receive from client to sever)
             protocall.handle_encoder_data()
             model_inputs = protocall.data
+            #print(model_inputs)
+            in_tup[0].tensor = model_inputs
             protocall.handle_encoder_data()
             send_time = protocall.data
             transfer_time = time.time()-send_time
@@ -180,7 +184,7 @@ def evaluate(model_wo_ddp, data_loader=None, iou_types=None, device=None, device
             #print(model_inputs.shape)
             #torch.cuda.synchronize()
             model_time = time.time()
-            outputs = model(model_inputs)
+            outputs = model(in_tup[0])#, in_targets[1])
 
             #outputs = [{k: v.to(cpu_device) for k, v in t.items()} for t in outputs]
             model_time = time.time() - model_time
@@ -306,10 +310,10 @@ def main(args):
     is_server = True
 
     if is_server:
-        sp.listen('128.195.54.126', 55555)
+        sp.listen('127.0.0.1', 55555) #128.195.54.126
         sp.server_handshake()
     else:
-        cp.connect('128.195.54.126', 55555)
+        cp.connect('127.0.0.1', 55555) #128.195.54.126
         cp.client_handshake()
 
     #end modifications 1
@@ -350,23 +354,32 @@ def main(args):
     #modifcations 3: Load model, reduce to encoder for client and from decoder on for server
 
     student_model = load_model(student_model_config, device)
-
+    transformLayer = student_model.transform
     #initally hardcoding BaseRCNN model from first coco yaml file to test functionality 
     if(is_server):
-        #student_model.transform = torch.nn.Identity()
-        #student_model.backbone.body.bottleneck_layer.encoder = torch.nn.Identity()
-        student_model = torch.nn.Sequential(*list(student_model.children())[1:])
-        student_model = torch.nn.Sequential(*list(student_model.children())[:2])
-        print(student_model, "MODEL_TEST")
-        student_model[0].body.bottleneck_layer = torch.nn.Sequential(*list(student_model[0].body.bottleneck_layer.children())[1:])
-        student_model[0].body = torch.nn.Sequential(*list(student_model[0].body.children()))
+        # student_model.backbone.body.bottleneck_layer.encoder = torch.nn.Identity()
+
+        # m1 = student_model.backbone
+        # m2 = student_model.rpn
+        # m3 = student_model.roi_heads
+
+        # student_model = torch.nn.Sequential(m1,m2,m3)
+        
+        
+        student_model.transform = transformIdentity()
+        student_model.backbone.body.bottleneck_layer.encoder = torch.nn.Identity()
+        #student_model = torch.nn.Sequential(*list(student_model.children())[1:])
+        #student_model = torch.nn.Sequential(*list(student_model.children())[:2])
+        #print(student_model, "MODEL_TEST")
+        #student_model[0].body.bottleneck_layer = torch.nn.Sequential(*list(student_model[0].body.bottleneck_layer.children())[1:])
+        #student_model[0].body = torch.nn.Sequential(*list(student_model[0].body.children()))
 
         #student_model = torch.nn.Sequential(*list(student_model.children())[:1])
         #student_model[0].fpn.inner_blocks = torch.nn.Sequential(*list(student_model[0].fpn.inner_blocks.children()))
         #student_model[0].fpn.layer_blocks = Identity() #torch.nn.Sequential(*list(student_model[0].fpn.layer_blocks.children()))
         #student_model[0].fpn = torch.nn.Sequential(*list(student_model[0].fpn.children()))
-        student_model[0] = torch.nn.Sequential(*list(student_model[0].children())[:1])
-        student_model = torch.nn.Sequential(*list(student_model.children())[:1])
+        #student_model[0] = torch.nn.Sequential(*list(student_model[0].children())[:1])
+        #student_model = torch.nn.Sequential(*list(student_model.children())[:1])
         
     else:    
         student_model = torch.nn.Sequential(*list(student_model.children())[:2])
@@ -412,7 +425,7 @@ def main(args):
 
     if check_if_analyzable(student_model):
         student_model.activate_analysis()
-    evaluate(student_model, test_data_loader, iou_types, device, device_ids, distributed, no_dp_eval=no_dp_eval,
+    evaluate(student_model, transformLayer, test_data_loader, iou_types, device, device_ids, distributed, no_dp_eval=no_dp_eval,
              log_freq=log_freq, title='[Student: {}]'.format(student_model_config['name']), is_server=is_server, protocall=sp if is_server else cp)
 
 

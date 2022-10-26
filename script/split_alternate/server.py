@@ -1,5 +1,4 @@
 from multiprocessing import connection
-import torch
 import pickle
 import time
 import sys
@@ -9,9 +8,12 @@ from params import PARAMS, CURR_DATE
 from Logger import ConsoleLogger, DictionaryStatsLogger
 from utils import *
 
-def process_data(data):
-    cap = decode_bytes(data)
-    return cap
+def process_data(data, decode=True):
+    if decode:
+        cap = decode_bytes(data)
+        return cap
+    else:
+        return data
 
 class ServerProtocol:
 
@@ -87,7 +89,7 @@ class ServerProtocol:
                 self.logger.log_debug(f'Processing data')
 
                 curr_time = time.time()
-                process_data(data)
+                process_data(data, decode=(PARAMS['DATASET']!='latency'))
                 process_time = round(time.time() - curr_time, 4)
 
                 self.send_response('')

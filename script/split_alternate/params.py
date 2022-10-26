@@ -3,6 +3,7 @@ from datetime import datetime
 LEVELS = {'DEBUG' : 0, 'INFO' : 1, 'ERROR' : 2, 'NOTHING' : 3}
 
 PARAMS = {}
+PARAMS['USE_NETWORK'] = True
 PARAMS['HOST'] = '127.0.0.1'
 PARAMS['PORT'] = 55557
 
@@ -15,7 +16,7 @@ PARAMS['FLUSH_LIMIT'] = 100
 PARAMS['DEV_DIR'] = 'dev'
 PARAMS['DATA_DIR'] = 'Data'
 
-PARAMS['DATASET'] = 'yc2'
+PARAMS['DATASET'] = 'framelen'
 PARAMS['FRAME_LIMIT'] = 15
 PARAMS['FPS'] = 30.
 PARAMS['VIDEO_SHAPE'] = (1280,720)

@@ -14,12 +14,13 @@ def create_input(data):
 
 class ClientProtocol:
 
-    def __init__(self):
+    def __init__(self, server_connect = PARAMS['USE_NETWORK']):
         self.socket = None
         self.data = None
         self.logger = ConsoleLogger()
         self.stats_logger = DictionaryStatsLogger(logfile=f"{PARAMS['STATS_LOG_DIR']}/client-{PARAMS['DATASET']}-{CURR_DATE}.log")
         self.dataset = Dataset()
+        self.server_connect = server_connect
 
     def connect(self, server_ip, server_port):
         self.logger.log_debug('Connecting from client')
@@ -82,9 +83,12 @@ class ClientProtocol:
                 self.stats_logger.push_log({'encode_time' : input_time, 'message_size' : size_compressed,
                                             'original_size' : size_orig, 'iteration' : i, 'fname' : fname}, append=True)
                 self.logger.log_info(f'Generated message with bytesize {size_compressed} and original {size_orig}')
-                self.send_encoder_data(message)
-                # wait for response
-                self.handle_input_data()
+                if self.server_connect:
+                    self.send_encoder_data(message)
+                    # wait for response
+                    self.handle_input_data()
+                else: # offline testing (only test metrics for the client model)
+                    pass
 
                 time.sleep(1) # try
                 now = time.time()

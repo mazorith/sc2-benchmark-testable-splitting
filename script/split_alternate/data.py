@@ -6,8 +6,10 @@ class Dataset:
     def __init__(self, data_dir = PARAMS['DATA_DIR'], dataset = PARAMS['DATASET']):
         self.data_dir = data_dir
         self.logger = ConsoleLogger()
-        if dataset == 'toy':
+        if dataset == 'latency':
             self.dataset = self.get_toy_dataloader()
+        elif dataset == 'framelen':
+            self.dataset = self.get_framelen_dataset()
         elif dataset == 'bdd':
             self.dataset = self.get_bdd_dataset()
         elif dataset == 'virat':
@@ -23,11 +25,6 @@ class Dataset:
         '''Returns byte_data, (x, y) where x is uncompressed data and y is compressed data
         If there is no compression, x=y'''
         return self.dataset
-
-    def get_toy_dataloader(self, shape=(100,100,100)):
-        for i in range(100):
-            data = torch.rand(shape)
-            yield data, (data.nelement() * data.element_size(), data.nelement() * data.element_size())
 
     def open_fname(self, fname, cap = None, codec = 'avc1', frame_limit = PARAMS['FRAME_LIMIT'], shape = PARAMS['VIDEO_SHAPE'],
                    transpose = False):
@@ -46,6 +43,40 @@ class Dataset:
         byte_frames = return_frames_as_bytes(frames, codec=codec)
 
         return True, (byte_frames, (frames_byte_size, len(byte_frames)))
+
+    def get_toy_dataloader(self):
+        # testing latency
+        # 100 arrays split by intervals of 10k: [10k, ..., 1mil]
+        # 30 trials each
+        array_lens = np.arange(int(1e4), int(1e6 + 1e4), int(1e4), dtype=int)
+        for array_len in array_lens:
+            arr = np.zeros((array_len,), dtype=np.int64)
+            arr_byte_len = sys.getsizeof(arr)
+            for trial in range(30):
+                yield arr, (arr_byte_len, arr_byte_len)
+
+    def get_framelen_dataset(self):
+        '''test framelen vs compression ratio
+        using virat dataset because it is the most stable'''
+        # 2 ->
+        virat_dir = f'{self.data_dir}/VIRAT'
+        fnames = [fname for fname in os.listdir(virat_dir) if
+                  '.mp4' in fname]  # remove .DS_Store and other misc files
+
+        frame_lens = range(2, 62, 2)
+        for frame_len in frame_lens:
+            for fname in fnames: # 10 videos inside virat
+                full_fname = f'{virat_dir}/{fname}'
+                cap = cv2.VideoCapture(full_fname)
+
+                for i in range(10):  # load 10 random frames / video ==> 100 samples / frame length
+                    ret, byte_info = self.open_fname(full_fname, cap=cap, frame_limit=frame_len)
+                    if not ret:
+                        continue
+
+                    byte_encoding, (frames_size, encoding_size) = byte_info
+
+                    yield byte_encoding, (frames_size, encoding_size), full_fname
 
     def get_bdd_dataset(self):
         fnames = [fname for fname in os.listdir(f'{self.data_dir}/bdd100k/videos/test') if '.mov' in fname] # remove .DS_Store and other misc files
@@ -76,7 +107,7 @@ class Dataset:
             full_fname = f'{virat_dir}/{fname}'
             cap = cv2.VideoCapture(full_fname)
 
-            for i in range(20): # load 10 random frames / video
+            for i in range(20): # load 20 random frames / video
                 ret, byte_info = self.open_fname(full_fname, cap=cap)
                 if not ret:
                     continue
@@ -95,7 +126,7 @@ class Dataset:
         for fname in fnames:
             cap = cv2.VideoCapture(fname)
 
-            for i in range(15):
+            for i in range(70):
                 ret, byte_info = self.open_fname(fname, cap=cap)
                 if not ret:
                     continue
@@ -109,9 +140,11 @@ class Dataset:
         fnames = [x for x in os.listdir(p_dir) if '.MOV' in x]
 
         for fname in fnames:
-            for i in range(30):
-                full_fname = f'{p_dir}/{fname}'
-                ret, byte_info = self.open_fname(f'{self.data_dir}/bdd100k/videos/test/{fname}', transpose=True)
+            full_fname = f'{p_dir}/{fname}'
+            cap = cv2.VideoCapture(full_fname)
+
+            for i in range(60):
+                ret, byte_info = self.open_fname(f'{self.data_dir}/Phone/{fname}', cap=cap, transpose=True)
                 if not ret:
                     continue
 

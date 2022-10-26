@@ -1,0 +1,1 @@
+The files contain the split models already implemented in sc2bench. 

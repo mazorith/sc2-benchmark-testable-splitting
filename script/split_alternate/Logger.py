@@ -28,7 +28,8 @@ class DictionaryStatsLogger:
 
     def push_log(self, log : {}, append = False):
         '''adds the log to the list, will automatically periodically flush.
-        append = True if you want to append the list to the log'''
+        append = True if you want to append current dict logs to the list and
+        re-create the dict'''
         self.curr_dict.update(log)
         if not append:
             return

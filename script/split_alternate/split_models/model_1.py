@@ -78,7 +78,7 @@ class ClientModel(nn.Module):
         images, targets, original_image_sizes, secondary_image_size = self.transform_forward(x)
         self.remove_degenerate_boxes(images, targets)
         features = self.encoder_forward(images.tensors)
-        return features, images.image_sizes, original_image_sizes, targets, secondary_image_size
+        return (features, targets), (images.image_sizes, original_image_sizes, secondary_image_size)
 
 # ==================================================== SERVER ====================================================
 
@@ -201,7 +201,7 @@ class ServerModel(nn.Module):
         self._has_warned = student_model._has_warned
         self.eager_outputs = student_model.eager_outputs
 
-    def forward(self, features, image_sizes, original_image_sizes, targets, secondary_image_size):
+    def forward(self, features, targets, image_sizes, original_image_sizes, secondary_image_size):
         '''image sizes '''
         features = self.backbone(features)
 

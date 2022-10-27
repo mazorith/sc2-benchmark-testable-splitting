@@ -16,13 +16,16 @@ def process_data(data, decode=True):
         return data
 
 class ServerProtocol:
+    '''Class for server operations. No functionality for offline evaluation (server does not do any eval).'''
 
-    def __init__(self):
+    def __init__(self, client_model = None, server_connect = PARAMS['USE_NETWORK'], server_model = None):
         self.socket = None
         self.connection = None
         self.data = None
         self.logger = ConsoleLogger()
         self.stats_logger = DictionaryStatsLogger(f"{PARAMS['STATS_LOG_DIR']}/server-{PARAMS['DATASET']}-{CURR_DATE}.log")
+        self.client_model = client_model
+        self.server_connect = server_connect
 
     def listen(self, server_ip, server_port):
         self.socket = socket(AF_INET, SOCK_STREAM)
@@ -47,7 +50,9 @@ class ServerProtocol:
         self.server_handshake()
         self.logger.log_info('Successfully started server and handshake')
 
-    def handle_encoder_data(self):
+    def get_client_data(self):
+        '''returns the client data if connected'''
+
         # collected_message = False
         self.logger.log_info('Waiting for client...')
         while True:
@@ -85,7 +90,7 @@ class ServerProtocol:
             iteration_num = 0
             while True:
                 time.sleep(1)
-                data = self.handle_encoder_data() # data  .shape
+                data = self.get_client_data() # data  .shape
                 self.logger.log_debug(f'Processing data')
 
                 curr_time = time.time()
@@ -116,6 +121,8 @@ class ServerProtocol:
 
     def close(self):
         self.stats_logger.flush()
+        if not self.server_connect:
+            return
         self.connection.shutdown(SHUT_WR)
         self.connection.close()
         self.socket.close()

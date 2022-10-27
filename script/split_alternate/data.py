@@ -18,6 +18,8 @@ class Dataset:
             self.dataset = self.get_youcook2_dataset()
         elif dataset == 'phone':
             self.dataset = self.get_phone_dataset()
+        elif dataset == 'model_toy':
+            self.dataset = self.get_model_toy_dataloader()
         else:
             raise ValueError('Dataset not found.')
 
@@ -157,3 +159,16 @@ class Dataset:
         # for dtype in
         # frame_i = (9, 9+frame_limit)
         # for i in range(frame_i[0], frame_i[1]):
+
+    def get_model_toy_dataloader(self):
+        # initial datalaoder as a toy example
+        for i in range(1000):
+            np_rand = np.zeros((1, 3, 1000, 1000)) # create a random tensor
+            # create a random "feature" for the model to detect
+            np_rand[:, :, 100:200, 300:400] = 1 #random 3x100x100 box = 1
+
+            rand_tensor = torch.from_numpy(np_rand).float()
+
+            size_uncompressed = rand_tensor.nelement() * rand_tensor.element_size()
+
+            yield rand_tensor, size_uncompressed, ''

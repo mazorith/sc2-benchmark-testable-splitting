@@ -4,6 +4,14 @@ import cv2
 import numpy as np
 from params import PARAMS
 
+def get_tensor_size(tensor):
+    if tensor is None:
+        return 0
+    elif 'QuantizedTensor' in str(type(tensor)):
+        return tensor.tensor.storage().__sizeof__()
+
+    return tensor.storage().__sizeof__()
+
 def extract_frames(cap, frame_limit, vid_shape = PARAMS['VIDEO_SHAPE'], transpose_frame = False) -> (bool, np.ndarray):
     '''From a cv2 VideoCapture, return a random frame_limit subset of the video'''
     # get 15 frames from random starting point

@@ -18,13 +18,13 @@ def process_data(data, decode=True):
 class ServerProtocol:
     '''Class for server operations. No functionality for offline evaluation (server does not do any eval).'''
 
-    def __init__(self, client_model = None, server_connect = PARAMS['USE_NETWORK'], server_model = None):
+    def __init__(self, server_model = None, server_connect = PARAMS['USE_NETWORK']):
         self.socket = None
         self.connection = None
         self.data = None
         self.logger = ConsoleLogger()
         self.stats_logger = DictionaryStatsLogger(f"{PARAMS['STATS_LOG_DIR']}/server-{PARAMS['DATASET']}-{CURR_DATE}.log")
-        self.client_model = client_model
+        self.server_model = server_model
         self.server_connect = server_connect
 
     def listen(self, server_ip, server_port):

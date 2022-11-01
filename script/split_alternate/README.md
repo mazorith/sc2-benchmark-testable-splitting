@@ -12,7 +12,7 @@ Basic Usage:
 ```python client.py```
 
 In the offline case, `client.py` will contain the entire
-the entire model and test the end-to-end time of the model 
+model and test the end-to-end time of the model 
 as well as an evaluation of the model's performance. Evaluators
 and the offline case itself will be contained in `client.py` 
 only to avoid any duplication of code in `server.py`; in other

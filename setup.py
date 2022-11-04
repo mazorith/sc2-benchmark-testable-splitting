@@ -24,7 +24,8 @@ setup(
         'pycocotools>=2.0.2',
         'torchdistill>=0.2.7',
         'compressai>=1.1.8',
-        'timm>=0.4.12'
+        'timm>=0.4.12',
+        'opencv-contrib-python>=4.4.0.46'
     ],
     extras_require={
         'test': ['pytest']

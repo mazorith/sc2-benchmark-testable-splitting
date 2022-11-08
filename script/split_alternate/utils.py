@@ -3,6 +3,7 @@ import sys
 import cv2
 import numpy as np
 from params import PARAMS
+import torch
 
 def get_tensor_size(tensor):
     if tensor is None:
@@ -65,3 +66,46 @@ def decode_bytes(byte_video, temp_dir = PARAMS['DEV_DIR']) -> cv2.VideoCapture:
     os.remove(temp_fname)
 
     return cap
+
+def calculate_bb_iou(boxA, boxB):
+    '''calculates the iou for x0y0x1y1 format, singular box, numpy'''
+    # determine the (x, y)-coordinates of the intersection rectangle
+
+    xA = max(boxA[0], boxB[0])
+    yA = max(boxA[1], boxB[1])
+    xB = min(boxA[2], boxB[2])
+    yB = min(boxA[3], boxB[3])
+
+    # compute the area of intersection rectangle
+    interArea = abs(max((xB - xA, 0)) * max((yB - yA), 0))
+    if interArea == 0:
+        return 0
+    # compute the area of both the prediction and ground-truth
+    # rectangles
+    boxAArea = abs((boxA[2] - boxA[0]) * (boxA[3] - boxA[1]))
+    boxBArea = abs((boxB[2] - boxB[0]) * (boxB[3] - boxB[1]))
+
+    # compute the intersection over union by taking the intersection
+    # area and dividing it by the sum of prediction + ground-truth
+    # areas - the interesection area
+    iou = interArea / float(boxAArea + boxBArea - interArea)
+
+    # return the intersection over union value
+    return iou
+
+def map_xyxy_to_xyhw(xyxy_box):
+    return np.array((xyxy_box[0], xyxy_box[1], xyxy_box[2] - xyxy_box[0], xyxy_box[3] - xyxy_box[1]))
+
+def map_xyhw_to_xyxy(xyhw_box):
+    return np.array((xyhw_box[0], xyhw_box[1], xyhw_box[2] + xyhw_box[0], xyhw_box[3] + xyhw_box[1]))
+
+def map_faster_rcnn_outputs(outputs : {str : torch.Tensor}) -> {int : [int]}:
+    boxes = outputs['boxes'].detach().numpy()
+    labels = outputs['labels'].detach().numpy()
+    # ignore scores for now
+
+    d = {}
+    for i in range(labels.shape[0]):
+        d[labels[i]] = boxes[i]
+
+    return d

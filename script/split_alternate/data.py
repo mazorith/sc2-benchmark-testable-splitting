@@ -1,6 +1,9 @@
 from utils import *
 import torch
 from Logger import ConsoleLogger
+from PIL import Image
+import pandas as pd
+from params import *
 
 class Dataset:
     def __init__(self, data_dir = PARAMS['DATA_DIR'], dataset = PARAMS['DATASET']):
@@ -20,12 +23,14 @@ class Dataset:
             self.dataset = self.get_phone_dataset()
         elif dataset == 'model_toy':
             self.dataset = self.get_model_toy_dataloader()
+        elif dataset == 'kitti':
+            self.dataset = self.get_kitti_dataset()
         else:
-            raise ValueError('Dataset not found.')
+            raise NotImplementedError('No Dataset Found.')
 
     def get_dataset(self):
-        '''Returns byte_data, (x, y) where x is uncompressed data and y is compressed data
-        If there is no compression, x=y'''
+        '''in the video case, returns (byte_encoding, (frames_size, encoding_size), full_fname)
+        for object detection, returns (image, orig_size, ((class, object_index),), (gt_boxes,), full_fname, new_video_bool)'''
         return self.dataset
 
     def open_fname(self, fname, cap = None, codec = 'avc1', frame_limit = PARAMS['FRAME_LIMIT'], shape = PARAMS['VIDEO_SHAPE'],
@@ -172,3 +177,36 @@ class Dataset:
             size_uncompressed = rand_tensor.nelement() * rand_tensor.element_size()
 
             yield rand_tensor, size_uncompressed, ''
+
+    def get_kitti_dataset(self, col_names = PARAMS['KITTI_NAMES']):
+        data_dir = f'{self.data_dir}/KITTI/data_tracking_image_2/training'
+        videos = sorted([f'{data_dir}/image_02/{x}' for x in os.listdir(f'{data_dir}/image_02') if x.isnumeric()]) #dddd for video id
+        video_labels = sorted([f'{data_dir}/label_02/{x}' for x in os.listdir(f'{data_dir}/label_02') if x[:-4].isnumeric()]) #dddd.txt for labels
+
+        assert len(videos) == len(video_labels), f'{videos}, {video_labels}'
+
+        for i, video in enumerate(videos):
+            frames = sorted([f'{video}/{x}' for x in os.listdir(video) if '.jpg' in x or '.png' in x])
+            label_df = pd.read_csv(video_labels[i], delimiter = ' ', header=None, names=col_names)
+            for j, frame in enumerate(frames):
+                img = np.array(Image.open(frame))
+                df_slice = label_df.loc[label_df['timestep'] == j]
+
+                # get the object indices
+                object_ids = list(df_slice['object_i'])
+                # get class names
+                classes = list(df_slice['class_name'])
+                classes_id = [KITTI_CLASSES[x] for x in classes]
+
+                # create list of bounding boxes
+                x0s = list(df_slice['x0'])
+                y0s = list(df_slice['y0'])
+                x1s = list(df_slice['x1'])
+                y1s = list(df_slice['y1'])
+
+                bb_list = list(zip(x0s, y0s, x1s, y1s))
+
+                yield img, sys.getsizeof(img), (classes_id, object_ids), bb_list, frame, j == 0
+
+            # only test a single video
+            break

@@ -7,6 +7,11 @@ import torch
 from copy import deepcopy
 
 def get_tensor_size(tensor):
+    if type(tensor) is bytes:
+        return len(tensor)
+    if type(tensor) is str:
+        return sys.getsizeof(tensor)
+
     if tensor is None:
         return 0
     elif 'QuantizedTensor' in str(type(tensor)):

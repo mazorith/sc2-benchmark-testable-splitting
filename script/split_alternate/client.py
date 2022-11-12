@@ -7,11 +7,11 @@ import pickle
 import time
 import sys
 import argparse
-from params import PARAMS, CURR_DATE
+from params import PARAMS, CURR_DATE, DESIRED_CLASSES
 from Logger import ConsoleLogger, DictionaryStatsLogger
-from utils import *
+from utils2 import *
 from data import Dataset
-from split_models import model_1
+from split_models import model_2
 from tracker import Tracker
 import traceback
 
@@ -31,22 +31,14 @@ def get_gt_detections(class_info : ((int,), (int,)), boxes : [[int,],]) -> {int 
     assert len(class_info[0]) == len(boxes), f'class_info: {class_info} boxes: {boxes}'
     gt_boxes = {}
     for i in range(len(class_info[0])):
-        gt_boxes[class_info[1][i]] = boxes[i]
+        if class_info[1][i] not in DESIRED_CLASSES:
+            continue
+        if class_info[1][i] in gt_boxes:
+            gt_boxes[class_info[1][i]].append(boxes[i])
+        else:
+            gt_boxes[class_info[1][i]] = [boxes[i]]
 
     return gt_boxes
-
-def eval_detections(gt_detections : {int : [int]}, generated_detections : {int : [int]}) -> {}:
-    # assert len(gt_detections) == len(generated_detections)
-    scores = {}
-    for object_id in gt_detections.keys():
-        if object_id not in generated_detections:
-            scores[object_id] = -0.01 # the tracker doesn't know about the object
-        elif generated_detections[object_id] is None:
-            scores[object_id] = -0.02 # the tracker already let go of the object
-        else:
-            scores[object_id] = round(calculate_bb_iou(gt_detections[object_id], generated_detections[object_id]), 4)
-
-    return scores
 
 class Client:
 
@@ -55,47 +47,69 @@ class Client:
             self._currently_tracking = set()
             self.tracker = Tracker()
 
-    def _init_detector(self, student_model):
+    def _init_detector(self):
         self._refresh_iters = 1
         if not self.detection:
             return
 
         if self.detection_compression == 'model':
-            assert student_model
-            self.client_model = model_1.ClientModel(student_model)
-            if self.server_connect:
-                self.server_model = nn.Identity()
+            # use student model
+            self.logger.log_debug(f'Setting up compression model {self.detector_model}.')
+
+            if self.detector_model == 'faster_rcnn':
+                student_model = get_student_model(PARAMS['FASTER_RCNN_YAML'])
+                self.client_model = model_2.ClientModel(student_model)
+                if self.server_connect:
+                    self.server_model = nn.Identity()
+                else:
+                    self.server_model = model_2.ServerModel(student_model)
             else:
-                self.server_model = model_1.ServerModel(student_model)
+                raise NotImplementedError
 
         else: # classical compression
-            self.client_model = nn.Identity()
-            if self.detector == 'model':
-                self.server_model = student_model
+            if self.server_connect:
+                self.logger.log_debug('Classical; connecting to server for detection.')
+                pass
             else:
-                self.server_model = nn.Identity()
+                self.logger.log_debug(f'Classical compression; setting up model {self.detector_model} for offline detection.')
+                # offline; get models
+                if self.detector_model == 'faster_rcnn':
+                    from torchvision.models.detection import fasterrcnn_resnet50_fpn_v2
+                    self.server_model = fasterrcnn_resnet50_fpn_v2(pretrained=True).eval()
+                elif self.detector_model == 'mask_rcnn':
+                    from torchvision.models.detection import maskrcnn_resnet50_fpn
+                    self.server_model = maskrcnn_resnet50_fpn(pretrained=True).eval()
+                elif self.detector_model == 'retinanet':
+                    from torchvision.models.detection import retinanet_resnet50_fpn
+                    self.server_model = retinanet_resnet50_fpn(pretrained=True).eval()
+                else:
+                    raise NotImplementedError
 
-    def __init__(self, student_model = None, server_connect = PARAMS['USE_NETWORK'], run_type = PARAMS['RUN_TYPE'],
+    def __init__(self, server_connect = PARAMS['USE_NETWORK'], run_type = PARAMS['RUN_TYPE'],
                  stats_log_dir = PARAMS['STATS_LOG_DIR'], dataset = PARAMS['DATASET'], tracking = PARAMS['TRACKING'],
                  detection = PARAMS['DETECTION'], detection_compression = PARAMS['DET_COMPRESSOR'],
-                 refresh_type = PARAMS['BOX_REFRESH'], detector = PARAMS['DETECTOR'], run_eval = PARAMS['EVAL']):
+                 refresh_type = PARAMS['BOX_REFRESH'], run_eval = PARAMS['EVAL'],
+                 detector_model = PARAMS['DETECTOR_MODEL']):
+
         self.socket, self.message = None, None
         self.logger, self.dataset, self.stats_logger = ConsoleLogger(), Dataset(dataset=dataset), \
                                                        DictionaryStatsLogger(logfile=f"{stats_log_dir}/client-{dataset}-{CURR_DATE}.log")
         self.server_connect, self.tracking, self.detection, self.run_type = server_connect, tracking, detection, run_type
-        self.detection_compression, self.refresh_type, self.detector = detection_compression, refresh_type, detector
-        self.run_eval = run_eval
+        self.detection_compression, self.refresh_type = detection_compression, refresh_type
+        self.run_eval, self.detector_model = run_eval, detector_model
 
         self._init_tracker()
-        self._init_detector(student_model)
+        self._init_detector()
 
     def _connect(self, server_ip, server_port):
+        assert self.server_connect
         self.logger.log_debug('Connecting from client')
         self.socket = socket(AF_INET, SOCK_STREAM)
         self.socket.connect((server_ip, server_port))
         self.logger.log_info('Successfully connected to socket')
 
     def _client_handshake(self):
+        assert self.server_connect
         self.logger.log_debug('Sending handshake from client')
         self.socket.sendall(b'\00')
         ack = self.socket.recv(1)
@@ -114,7 +128,10 @@ class Client:
             self.logger.log_info('Starting in offline mode.')
 
     def _send_encoder_data(self, data):
+        '''if connected to the server, formats and sends the data
+        else, simply store the data in self.message'''
         if self.server_connect:
+            self.logger.log_debug('Sent encoded data to server.')
             data = pickle.dumps(data)
             length = pack('>Q', len(data))
 
@@ -122,12 +139,15 @@ class Client:
             self.socket.sendall(data)
 
             ack = self.socket.recv(1)
+            self.logger.log_debug(f'Received server ack: {ack}.')
 
         else:
             self.message = data
 
     def _get_server_data(self):
         '''returns the server data in any format'''
+        assert self.server_connect
+
         collected_message = False
         while not collected_message:
             bs = self.socket.recv(8)
@@ -139,34 +159,55 @@ class Client:
                     4096 if to_read > 4096 else to_read)
 
             # send our 0 ack
-            assert len(b'\00') == 1
-            collected_message = True
             self.socket.sendall(b'\00')
+
+            self.logger.log_debug('Received message.')
+
             return pickle.loads(data)
 
     def get_model_bb(self):
         '''uses the model to get the bounding box
         will never be called if DETECTOR is False'''
 
-        if self.server_connect:
+        assert self.detection
+
+        if self.server_connect: # connects to server and gets the data from there
             return self._get_server_data()
 
-        else:
-            client_data = self.message['data']
-            model_outputs = self.server_model(*client_data)
+        else: # this part should be on the server.py for the online case
+            self.logger.log_debug('Using offline model for detection.')
 
+            client_data = self.message['data']
+            if self.detection_compression == 'model':
+                if self.detector_model == 'faster_rcnn':
+                    model_outputs = self.server_model(*client_data)[0]
+                else:
+                    raise NotImplementedError('No specified detector model exists.')
+            elif self.detection_compression == 'classical':
+                decoded_frame = decode_frame(client_data)
+                model_outputs = self.server_model([torch.from_numpy(decoded_frame).float()])[0] # first frame
+            else:
+                raise NotImplementedError('No other compression method exists.')
+
+            self.logger.log_debug("Generated new BB with model (offline).")
             return model_outputs
 
     def handle_server_data(self, server_data, server_model = PARAMS['DETECTOR_MODEL']):
-        '''Handles the server data, ie. formatting the model outputs into eval-friendly outputs'''
-        if server_model == 'faster_rcnn':
-            return map_faster_rcnn_outputs(server_data)
+        '''Handles the server data, ie. formatting the model outputs into eval-friendly
+        and tracker-friendly outputs'''
+        if self.detection:
+            # server_data is in the format of {'boxes' : [], 'labels' : [], 'scores' : []}
+            detections, scores = map_coco_outputs(server_data)
+            return detections
         else:
             return server_data
 
-    def get_new_bounding_box(self, d : (), before, i : int) -> {}:
+    def get_new_bounding_box(self, d : (), before = None) -> {}:
         '''gets a new "accurate" bounding box (from a separate detection pipeline)
         returns in the format of {object_id : (xyxy)}'''
+
+        data, size_orig, class_info, gt, fname, _ = d
+        gt_detections = get_gt_detections(class_info, gt)
 
         # if gt is used, get bounding box will simply return the ground truth
         if not self.detection:
@@ -175,13 +216,14 @@ class Client:
             _, size_orig, class_info, gt, _, _ = d
 
             self.stats_logger.push_log({'gt' : True, 'original_size' : size_orig})
-            return get_gt_detections(class_info, gt)
+            return gt_detections
 
         # otherwise, use an actual detector
         # offline case in model detection is handled in the individual helper functions
         self.logger.log_debug('Creating message for boxes.')
         # uses model for detection; requires some compression (make metrics)
         if self.detection_compression == 'model':  # use a model (bottleneck) to compress it
+            self.logger.log_debug('Performing compression using mdoel.')
             data, size_orig, class_info, gt, fname, _ = d
             data_reshape = (data/256).transpose((2,0,1))[np.newaxis, ...]
 
@@ -190,16 +232,29 @@ class Client:
             tensors_to_measure, other_info = self.client_model(torch.from_numpy(data_reshape).float())
             compression_time = time.time() - now
 
-            size_compressed = sum(get_tensor_size(x) for x in (tensors_to_measure))
+            size_compressed = 0
+            for x in tensors_to_measure:
+                if type(x) is dict:
+                    size_compressed += sum(get_tensor_size(y) for y in x)
+                else:
+                    size_compressed += get_tensor_size(x)
 
             message = {'timestamp': time.time(), 'data': (*tensors_to_measure, *other_info)}
 
             self.stats_logger.push_log({'compressor' : 'model'})
 
-        else:  # classical compression – dataloader should have compressed info
-            data, (size_orig, size_compressed), fname = d
-            compression_time = time.time() - before
-            message = {'timestamp': time.time(), 'data': data}
+        else:  # classical compression – compress data (frame) into jpg
+            # TODO: make options – option to compress into jpg or compress video inside dataloader
+            self.logger.log_debug('Performing classical compression on image.')
+            time_from_before = time.time() - before
+
+            # collect compression runtime
+            now = time.time()
+            encoded_frame = encode_frame(data)
+            compression_time = time.time() - now
+            size_compressed = sys.getsizeof(encoded_frame)
+
+            message = {'timestamp': time.time(), 'data': encoded_frame}
 
             self.stats_logger.push_log({'compressor': 'classical'})
 
@@ -212,8 +267,12 @@ class Client:
         # response_time in the offline case will be the time it takes for the server model to run
         # in the online case it will be 2x latency + response_time
         now = time.time()
-        server_data = self.get_model_bb()[0] # batch size 1
+        server_data = self.get_model_bb() # batch size 1
+        if server_data is None:
+            server_data = gt_detections
+
         self.stats_logger.push_log({'response_time': time.time() - now}, append=False)
+        self.logger.log_info(f'Received detection with response time {time.time() - now}')
 
         return self.handle_server_data(server_data)
 
@@ -249,7 +308,6 @@ class Client:
                 self.logger.log_info(f'Starting iteration {i}')
 
                 if self.run_type == 'BB':
-                    self.logger.log_debug('Starting Bounding Box on frame.')
 
                     data, size_orig, class_info, gt, fname, start = d
                     self.stats_logger.push_log({'iteration' : i, 'fname' : fname})
@@ -258,7 +316,7 @@ class Client:
 
                     if start or self.check_detection_refresh():
                         self.logger.log_debug('Re-generating bounding boxes.')
-                        detections = self.get_new_bounding_box(d, now, i)
+                        detections = self.get_new_bounding_box(d, now)
 
                         # ith new bboxes, add to tracker
                         # data should be a np array
@@ -300,7 +358,7 @@ class Client:
         else:
             pass
 
-def get_student_model(yaml_file = PARAMS['DETECTOR_YAML']):
+def get_student_model(yaml_file = PARAMS['FASTER_RCNN_YAML']):
     if yaml_file is None:
         return None
 
@@ -309,15 +367,12 @@ def get_student_model(yaml_file = PARAMS['DETECTOR_YAML']):
     student_model_config = models_config['student_model'] if 'student_model' in models_config else models_config[
         'model']
     student_model = load_model(student_model_config, PARAMS['DETECTION_DEVICE']).eval()
-    student_model.roi_heads.score_thresh = 0.0005
 
     return student_model
 
 #main functionality for testing/debugging
 if __name__ == '__main__':
+    cp = Client()
 
-    student_model = get_student_model(PARAMS['DETECTOR_YAML'])
-
-    cp = Client(student_model = student_model)
     cp.start(PARAMS['HOST'], PARAMS['PORT'])
     cp.start_loop()

@@ -2,8 +2,9 @@ import os
 import sys
 import cv2
 import numpy as np
-from params import PARAMS
+from params import PARAMS, DESIRED_CLASSES
 import torch
+from copy import deepcopy
 
 def get_tensor_size(tensor):
     if tensor is None:
@@ -12,6 +13,26 @@ def get_tensor_size(tensor):
         return tensor.tensor.storage().__sizeof__()
 
     return tensor.storage().__sizeof__()
+
+def encode_frame(frame : np.ndarray):
+    '''uses cv2.imencode to encode a frame'''
+    if frame.shape[2] != 3:
+        frame = frame.transpose((1,2,0))
+
+    if frame.dtype != 'uint8':
+        frame *= 256
+        # frame.astype('uint8')
+
+    encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), 90]
+    success, frame_bytes = cv2.imencode('.jpg', frame, encode_param)
+    if not success:
+        raise ValueError('Encoding Failed')
+
+    return frame_bytes
+
+def decode_frame(encoded_frame):
+    '''decodes the encode_frame and returns it as a float array (between 0 and 1) and 3xHxW'''
+    return cv2.imdecode(encoded_frame, cv2.IMREAD_COLOR).transpose(2,0,1) / 256
 
 def extract_frames(cap, frame_limit, vid_shape = PARAMS['VIDEO_SHAPE'], transpose_frame = False) -> (bool, np.ndarray):
     '''From a cv2 VideoCapture, return a random frame_limit subset of the video'''
@@ -99,13 +120,73 @@ def map_xyxy_to_xyhw(xyxy_box):
 def map_xyhw_to_xyxy(xyhw_box):
     return np.array((xyhw_box[0], xyhw_box[1], xyhw_box[2] + xyhw_box[0], xyhw_box[3] + xyhw_box[1]))
 
-def map_faster_rcnn_outputs(outputs : {str : torch.Tensor}) -> {int : [int]}:
+def map_coco_outputs(outputs : {str : torch.Tensor}) -> ({int : [int]}, float):
+    '''Maps the model output (dict with keys boxes, labels, scores) to {label : boxes}'''
     boxes = outputs['boxes'].detach().numpy()
     labels = outputs['labels'].detach().numpy()
+    scores = outputs['scores'].detach().numpy()
     # ignore scores for now
 
     d = {}
     for i in range(labels.shape[0]):
-        d[labels[i]] = boxes[i]
+        if labels[i] not in DESIRED_CLASSES:
+            continue
+        if labels[i] in d:
+            d[labels[i]].append(boxes[i])
+        else:
+            d[labels[i]] = [boxes[i]]
 
-    return d
+    return d, scores
+
+def calc_square_evals(boxes1 : [], boxes2 : []):
+    '''Returns a greedy max score for boxes when the correspondence between boxes is unknown'''
+
+    if len(boxes1) > len(boxes2):
+        boxes1, boxes2 = boxes2, boxes1
+
+    scores = [] # ordered scores
+    for box1 in boxes1:
+        highscore, highind = 0, 0
+        for j, box2 in enumerate(boxes2):
+            curr_score = calculate_bb_iou(box1, box2)
+
+            if curr_score > highscore:
+                highscore, highind = curr_score, j
+
+        if highind < len(boxes2)-1:
+            boxes2 = boxes2[:highind] + boxes2[highind+1:]
+        else:
+            boxes2 = boxes2[:highind]
+
+        scores.append(round(highscore, 5))
+
+    return scores
+
+
+def eval_detections(gt_detections : {int : [[int]]}, generated_detections : {int : [[int]]}) -> {}:
+    '''Detections are in the format of {class : [boxes]}
+    Returns in the format of {class : (one of IoU, 2 for missed, 3 for extra)}'''
+    # assert len(gt_detections) == len(generated_detections)
+
+    unioned_keys = set(gt_detections.keys()).union(set(generated_detections.keys()))
+    scores = {}
+    gt, pred = deepcopy(gt_detections), deepcopy(generated_detections)
+
+    for key in unioned_keys:
+        key_format = f'class_{key}'
+        if key not in gt:
+            scores[key_format] = [3 for _ in range(len(pred[key]))]
+        elif key not in pred:
+            scores[key_format] = [2 for _ in range(len(gt[key]))]
+        else:
+            gt_boxes = gt[key]
+            pred_boxes = pred[key]
+
+            scores[key_format] = calc_square_evals(gt_boxes, pred_boxes)
+
+            if len(gt_boxes) > len(pred_boxes): # more gt boxes means scores[key] has missing entries
+                scores[key_format] += [2] * (len(gt_boxes) - len(pred_boxes))
+            elif len(gt_boxes) < len(pred_boxes): # more gt boxes means scores[key] has missing entries
+                scores[key_format] += [3] * (len(pred_boxes) - len(gt_boxes))
+
+    return scores

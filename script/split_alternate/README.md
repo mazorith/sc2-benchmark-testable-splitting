@@ -17,3 +17,5 @@ as well as an evaluation of the model's performance. Evaluators
 and the offline case itself will be contained in `client.py` 
 only to avoid any duplication of code in `server.py`; in other
 words, there is no offline evaluation for `server.py`.
+
+Eventually, have TorchScript-ed models. 

@@ -1,5 +1,6 @@
 '''This file contains the split versions (in ClientModel and ServerModel) of
-configs/coco2017/supervised_compression/ghnd-bq/faster_rcnn_resnet50-bq1ch_fpn_from_faster_rcnn_resnet50_fpn.yaml'''
+configs/coco2017/supervised_compression/ghnd-bq/faster_rcnn_resnet50-bq1ch_fpn_from_faster_rcnn_resnet50_fpn.yaml
+This one uses the weights trained on ilsvrc (the default path used by yoshi's load function)'''
 
 import warnings
 import torch
@@ -19,11 +20,11 @@ class ClientModel(nn.Module):
         self.transform = student_model.transform
         self.encoder = student_model.backbone.body.bottleneck_layer.encoder
         self.training = student_model.training
-        self.compressor = student_model.backbone.body.bottleneck_layer.compressor
+
+        self.entropy_bottleneck = student_model.backbone.body.bottleneck_layer.entropy_bottleneck
 
     def remove_degenerate_boxes(self, images, targets):
         # Check for degenerate boxes
-        # TODO: Move this to a function
         if targets is not None:
             for target_idx, target in enumerate(targets):
                 boxes = target["boxes"]
@@ -67,10 +68,10 @@ class ClientModel(nn.Module):
         return images, targets, original_image_sizes, images.tensors.shape[-2:]
 
     def encoder_forward(self, z):
-        z = self.encoder(z)
-        if self.compressor is not None:
-            z = self.compressor(z)
-        return z
+        latent = self.encoder(z)
+        latent_strings = self.entropy_bottleneck.compress(latent)
+
+        return {'strings': [latent_strings], 'shape': latent.size()[-2:]}
 
     def forward(self, x):
         images, targets, original_image_sizes, secondary_image_size = self.transform_forward(x)
@@ -80,10 +81,7 @@ class ClientModel(nn.Module):
 
 # ==================================================== SERVER ====================================================
 
-# RPN Helper functions used for redefining RPN Forward
-# RPN Forward currently takes in the images as input (while only using the shapes); by re-defining the function,
-# we avoid using the images as input. However, our custom re-definition must have these non-built in functions
-# from https://github.com/pytorch/vision/blob/main/torchvision/models/detection/rpn.py
+# RPN Helper Functions
 def concat_box_prediction_layers(box_cls: List[Tensor], box_regression: List[Tensor]) -> Tuple[Tensor, Tensor]:
     box_cls_flattened = []
     box_regression_flattened = []
@@ -178,10 +176,11 @@ class ServerModel(nn.Module):
         student_model = deepcopy(student_model2)
         self.backbone = student_model.backbone
 
-        # change bottleneck_layer to only decode (encoder in ClientModel)
-        self.backbone.body.bottleneck_layer.encoder = nn.Identity()
-        self.backbone.body.bottleneck_layer.compressor = nn.Identity()
-        self.backbone.body.bottleneck_layer.encode = lambda z: {'z': z}
+        # add these for decoding
+        self.entropy_bottleneck = self.backbone.body.bottleneck_layer.entropy_bottleneck
+        self.decoder = self.backbone.body.bottleneck_layer.decoder
+        # remove bottleneck_layer from body
+        self.backbone.body.bottleneck_layer = nn.Identity()
 
         # change RPN and anchor generator
         self.rpn = student_model.rpn
@@ -192,14 +191,37 @@ class ServerModel(nn.Module):
                                                                                                     image_sizes,
                                                                                                     secondary_image_size)
 
+        # copy other functions for forward
         self.roi_heads = student_model.roi_heads
         self.postprocess = student_model.transform.postprocess
         self._has_warned = student_model._has_warned
         self.eager_outputs = student_model.eager_outputs
 
+        self.fpn = student_model.backbone.fpn
+
+    def change_score_thresh(self, new_score):  # for testing if the thresh is too high
+        self.roi_heads.score_thresh = new_score
+
+    def body_forward(self, x):
+        out = OrderedDict()
+        for module_key, module in self.backbone.body.named_children():
+            x = module(x)
+
+            if module_key in self.backbone.body.return_layer_dict:
+                out_name = self.backbone.body.return_layer_dict[module_key]
+                out[out_name] = x
+
+        return out
+
+    def decode(self, strings, shape):
+        latent_hat = self.entropy_bottleneck.decompress(strings[0], shape)
+        return self.decoder(latent_hat)
+
     def forward(self, features, targets, image_sizes, original_image_sizes, secondary_image_size):
         '''image sizes '''
-        features = self.backbone(features)
+        features = torch.Tensor(self.decode(**features))
+        features = self.body_forward(features)
+        features = self.fpn(features)
 
         if isinstance(features, torch.Tensor):
             features = OrderedDict([("0", features)])

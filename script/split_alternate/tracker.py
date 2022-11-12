@@ -3,7 +3,7 @@ import sys
 import time
 from params import PARAMS
 import numpy as np
-from utils import *
+from utils2 import *
 from Logger import ConsoleLogger
 
 def init_tracker(tracker_type="MEDIANFLOW"):
@@ -34,13 +34,21 @@ class Tracker():
     def __init__(self, tracker_type = PARAMS['TRACKER']):
         self.tracker_type = tracker_type
         self.trackers = {} # id : tracker
+        self.class_map = {} # id : class
 
     def handle_new_detection(self, frame : np.ndarray, detections : {int : [int]}):
-        '''when a new detection comes, create all the trackers'''
+        '''Creates trackers for a new set of Detections
+        Detections in the format {class, [bbox_xyxy]}
+        '''
         self.trackers = {}
-        for object_id, bbox_xyxy in detections.items():
-            self.trackers[object_id] = init_tracker(self.tracker_type)
-            self.trackers[object_id].init(frame, map_xyxy_to_xyhw(bbox_xyxy))
+        obj_id = 0
+        for key, dets in detections.items():
+            for det in dets:
+                self.class_map[obj_id] = key
+                self.trackers[obj_id] = init_tracker(self.tracker_type)
+                self.trackers[obj_id].init(frame, map_xyxy_to_xyhw(det))
+
+                obj_id += 1
 
     def add_bounding_box(self, frame, bbox_xyxy, object_id):
         raise NotImplementedError
@@ -53,10 +61,13 @@ class Tracker():
         updated_boxes = {}
         for target in self.trackers.keys():
             success, bbox_hxhy = self.trackers[target].update(frame)
-            if not success:
-                updated_boxes[target] = None
-            else:
-                updated_boxes[target] = map_xyhw_to_xyxy(bbox_hxhy)
+
+            if success:
+                target_class = self.class_map[target]
+                if target_class in updated_boxes:
+                    updated_boxes[target_class].append(map_xyhw_to_xyxy(bbox_hxhy))
+                else:
+                    updated_boxes[target_class] = [map_xyhw_to_xyxy(bbox_hxhy)]
 
         return updated_boxes
 

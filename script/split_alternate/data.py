@@ -1,4 +1,4 @@
-from utils import *
+from utils2 import *
 import torch
 from Logger import ConsoleLogger
 from PIL import Image

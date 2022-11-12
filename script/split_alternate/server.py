@@ -7,6 +7,7 @@ from struct import pack, unpack
 from params import PARAMS, CURR_DATE
 from Logger import ConsoleLogger, DictionaryStatsLogger
 from utils2 import *
+import traceback
 
 from torchdistill.common import yaml_util
 from sc2bench.models.detection.registry import load_detection_model
@@ -161,6 +162,7 @@ class Server:
                 time_since_processed_lass_message = time.time()
 
         except Exception as ex:
+            traceback.print_exc()
             self.logger.log_error(ex)
 
         finally:
@@ -171,9 +173,7 @@ class Server:
         data = pickle.dumps(data)
         length = pack('>Q', len(data))
 
-        self.logger.log_debug('Sending length.')
         self.connection.sendall(length)
-        self.logger.log_debug('Sending data.')
         self.connection.sendall(data)
 
         ack = self.connection.recv(1)

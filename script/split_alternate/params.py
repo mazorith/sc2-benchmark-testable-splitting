@@ -15,12 +15,12 @@ PARAMS['HOST'] = '127.0.0.1'
 PARAMS['PORT'] = 55559
 
 # params for directories + misc things
-PARAMS['STATS_LOG_DIR'] = 'Logs'
+PARAMS['STATS_LOG_DIR'] = 'logs'
 PARAMS['DATE_FORMAT'] = '%m/%d %H:%M:%S'
 PARAMS['LOGGING_LEVEL'] = LEVELS['DEBUG']
 PARAMS['FLUSH_LIMIT'] = 100
 PARAMS['DEV_DIR'] = 'dev'
-PARAMS['DATA_DIR'] = 'Data'
+PARAMS['DATA_DIR'] = 'data'
 
 # params for the dataset – used for classical compression methods
 PARAMS['DATASET'] = 'kitti'
@@ -44,7 +44,7 @@ PARAMS['DETECTION'] = True # if false, uses ground truth labels for the detectio
 PARAMS['DET_COMPRESSOR'] = 'classical' # 'model' vs. 'classical': model is bottleneck, classical is classical compression
 PARAMS['DETECTION_DEVICE'] = 'cpu'
 PARAMS['DETECTOR_MODEL'] = 'faster_rcnn' # specific detector model
-# PARAMS['DETECTOR_CKPT'] = 'Models/Split/model_2' # {det_client}_client is the location of the saved weights
+# PARAMS['DETECTOR_CKPT'] = 'models/Split/model_2' # {det_client}_client is the location of the saved weights
 
 # params for detection 'refreshes'
 PARAMS['BOX_REFRESH'] = 'fixed' # method to refresh bbox

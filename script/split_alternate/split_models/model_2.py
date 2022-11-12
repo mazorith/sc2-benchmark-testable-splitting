@@ -1,5 +1,5 @@
 '''This file contains the split versions (in ClientModel and ServerModel) of
-configs/coco2017/supervised_compression/ghnd-bq/faster_rcnn_resnet50-bq1ch_fpn_from_faster_rcnn_resnet50_fpn.yaml
+configs/coco2017/supervised_compression/entropic_student/faster_rcnn_splittable_resnet50-fp-beta0.08_fpn_from_faster_rcnn_resnet50_fpn.yaml
 This one uses the weights trained on ilsvrc (the default path used by yoshi's load function)'''
 
 import warnings

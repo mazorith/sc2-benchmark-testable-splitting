@@ -4,11 +4,13 @@ from Logger import ConsoleLogger
 from PIL import Image
 import pandas as pd
 from params import *
+import time
 
 class Dataset:
-    def __init__(self, data_dir = PARAMS['DATA_DIR'], dataset = PARAMS['DATASET']):
+    def __init__(self, data_dir = PARAMS['DATA_DIR'], dataset = PARAMS['DATASET'], fps = PARAMS['FPS']):
         self.data_dir = data_dir
         self.logger = ConsoleLogger()
+        self.simulated_fps = fps
         if dataset == 'latency':
             self.dataset = self.get_toy_dataloader()
         elif dataset == 'framelen':
@@ -186,10 +188,19 @@ class Dataset:
 
         assert len(videos) == len(video_labels), f'{videos}, {video_labels}'
 
+        time_per_frame = 1/self.simulated_fps
+
         for i, video in enumerate(videos):
             frames = sorted([f'{video}/{x}' for x in os.listdir(video) if '.jpg' in x or '.png' in x])
             label_df = pd.read_csv(video_labels[i], delimiter = ' ', header=None, names=col_names)
+            time_since_previous_frame = time.time()
             for j, fname in enumerate(frames):
+                while time.time() - time_since_previous_frame < time_per_frame:
+                    time.sleep(0.005)
+                    continue
+
+                time_since_previous_frame = time.time()
+
                 img = np.array(Image.open(fname))
                 df_slice = label_df.loc[label_df['timestep'] == j]
 

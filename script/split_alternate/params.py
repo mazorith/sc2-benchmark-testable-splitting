@@ -10,7 +10,7 @@ DESIRED_CLASSES = {1,2,3}
 PARAMS = {}
 # in the offline case, client.py will have the server model as well
 # otherwise
-PARAMS['USE_NETWORK'] = True
+PARAMS['USE_NETWORK'] = False
 PARAMS['HOST'] = '127.0.0.1'
 PARAMS['PORT'] = 55559
 
@@ -41,7 +41,7 @@ PARAMS['TRACKER'] = 'MEDIANFLOW' # tracker algorithm
 
 # params for the object detection
 PARAMS['DETECTION'] = True # if false, uses ground truth labels for the detection (to eval tracking) – false makes it offline
-PARAMS['DET_COMPRESSOR'] = 'classical' # 'model' vs. 'classical': model is bottleneck, classical is classical compression
+PARAMS['DET_COMPRESSOR'] = 'model' # 'model' vs. 'classical': model is bottleneck, classical is classical compression
 PARAMS['DETECTION_DEVICE'] = 'cpu'
 PARAMS['DETECTOR_MODEL'] = 'faster_rcnn' # specific detector model
 # PARAMS['DETECTOR_CKPT'] = 'models/Split/model_2' # {det_client}_client is the location of the saved weights

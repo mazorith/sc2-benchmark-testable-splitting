@@ -27,16 +27,34 @@ def load_model(model_config, device):
 def create_input(data):
     return data
 
-def get_gt_detections(class_info : ((int,), (int,)), boxes : [[int,],]) -> {int : [int]}:
+def get_gt_detections(class_info : ((int,), (int,)), boxes : [[int,],]) -> {int : {int : (int,)}}:
+    '''reformats the annotations into eval-friendly output
+    class_info is (class_ids, object_ids)
+    returns as {class_ids : {object_ids : box}}'''
     assert len(class_info[0]) == len(boxes), f'class_info: {class_info} boxes: {boxes}'
     gt_boxes = {}
     for i in range(len(class_info[0])):
-        if class_info[1][i] not in DESIRED_CLASSES:
+        if class_info[0][i] not in DESIRED_CLASSES:
             continue
-        if class_info[1][i] in gt_boxes:
-            gt_boxes[class_info[1][i]].append(boxes[i])
+
+        if class_info[0][i] in gt_boxes:
+            gt_boxes[class_info[0][i]][class_info[1][i]] = boxes[i]
         else:
-            gt_boxes[class_info[1][i]] = [boxes[i]]
+            gt_boxes[class_info[0][i]] = {class_info[1][i]: boxes[i]}
+
+    return gt_boxes
+
+def get_gt_detections_as_pred(class_info : ((int,), (int,)), boxes : [[int,],]) -> {int : (int,)}:
+    '''reformats the annotations into tracker-prediction format
+    class_info is (class_ids, object_ids)
+    returns as {object_id : box}'''
+    assert len(class_info[0]) == len(boxes), f'class_info: {class_info} boxes: {boxes}'
+    gt_boxes = {}
+    for i in range(len(class_info[0])):
+        if class_info[0][i] not in DESIRED_CLASSES:
+            continue
+
+        gt_boxes[class_info[1][i]] = boxes[i]
 
     return gt_boxes
 
@@ -97,6 +115,8 @@ class Client:
         self.server_connect, self.tracking, self.detection, self.run_type = server_connect, tracking, detection, run_type
         self.detection_compression, self.refresh_type = detection_compression, refresh_type
         self.run_eval, self.detector_model = run_eval, detector_model
+
+        self.class_map_detection = {}
 
         self._init_tracker()
         self._init_detector()
@@ -200,9 +220,9 @@ class Client:
             detections, scores = map_coco_outputs(server_data)
             return detections
         else:
-            return server_data
+            raise NotImplementedError('No other server task other than detection.')
 
-    def get_new_bounding_box(self, d : (), before = None) -> {}:
+    def get_new_bounding_box(self, d : (), before = None) -> {int : {int : (int,)}}:
         '''gets a new "accurate" bounding box (from a separate detection pipeline)
         returns in the format of {object_id : (xyxy)}'''
 
@@ -284,15 +304,18 @@ class Client:
                 return True
 
             self._refresh_iters += 1
+            return False
 
         else:
             raise NotImplementedError('Invalid Refresh Type')
 
-    def refresh_tracker(self, frame : np.ndarray, detections : {int : [int]}):
+    def reinit_tracker(self, frame : np.ndarray, detections : {int : (int,)}):
+        '''creates a new tracker with the detections and frames
+        detections is in the format of {object_id : [box]}'''
         if self.tracking:
             self.tracker.handle_new_detection(frame, detections)
 
-    def get_tracker_bounding_box(self, frame) -> {int : [int]}:
+    def get_tracker_bounding_box(self, frame) -> {int : (int,)}:
         if self.tracking:
             now = time.time()
             detections = self.tracker.update(frame)
@@ -300,6 +323,13 @@ class Client:
             return detections
 
         return None
+
+    def eval_detections(self, gt_detections, pred_detections):
+        '''evaluates detections and pushes the logs'''
+        self.logger.log_info('Evaluating detections.')
+        pred_scores, missing_preds = eval_detections(gt_detections, pred_detections, self.class_map_detection)
+        self.stats_logger.push_log({'missing_preds' : missing_preds, **pred_scores}, append=False)
+        return
 
     def start_loop(self):
         try:
@@ -312,26 +342,61 @@ class Client:
                     data, size_orig, class_info, gt, fname, start = d
                     self.stats_logger.push_log({'iteration' : i, 'fname' : fname})
 
-                    gt_detections = get_gt_detections(class_info, gt)
+                    # get the gt detections in {object : bbox} for eval
+                    gt_detections = get_gt_detections_as_pred(class_info, gt)
+                    self.logger.log_debug(f'gt_detections : {gt_detections}')
 
-                    if start or self.check_detection_refresh():
+                    if start or self.check_detection_refresh(): # get new bounding box
+                        # new detections should be in the format of {class : {object : bbox}} for the class matching
+
+                        gt_detections_with_classes = get_gt_detections(class_info, gt)
                         self.logger.log_debug('Re-generating bounding boxes.')
-                        detections = self.get_new_bounding_box(d, now)
+
+                        # newthread()
+                        detections_with_classes = self.get_new_bounding_box(d, now)
+
+                        if self.run_eval:
+                            # maps the ground truth labels with the predicted output (for evaluation purposes)
+                            self.class_map_detection, extra_detections = map_bbox_ids(detections_with_classes,
+                                                                                      gt_detections_with_classes)
+                            self.stats_logger.push_log({f'extra_class_{class_id}': extra_detection
+                                                        for class_id, extra_detection in extra_detections.items()},
+                                                       append=False)
+
+                            # remove the unnecessary boxes (don't bother tracking them)
+                            detections = {}
+                            for class_id, class_detection in detections_with_classes.items():
+                                for object_id, bbox in class_detection.items():
+                                    if object_id in self.class_map_detection:
+                                        detections[object_id] = bbox
+
+                            self.logger.log_debug(f'Detections made: {len(detections)}, '
+                                                  f'with mapping {self.class_map_detection}.')
+
+                        else:
+                            detections = {}
+                            for class_id, class_detection in detections_with_classes.items():
+                                for object_id, bbox in class_detection.items():
+                                    detections[object_id] = bbox
+
+                            self.logger.log_debug(f'Detections made: {len(detections)}.')
 
                         # ith new bboxes, add to tracker
                         # data should be a np array
-                        self.refresh_tracker(data, detections)
+                        self.reinit_tracker(data, detections)
 
                         self.stats_logger.push_log({'tracker' : False})
 
                     else: # use tracker to get new bb
+                        # detections here should be in the format of {object : bbox} as there is no
+                        # class matching (inside class_map_detection)
                         self.logger.log_debug('Using tracker for bounding boxes.')
                         detections = self.get_tracker_bounding_box(data)
                         if detections is None:
                             detections = gt_detections
 
                     if self.run_eval:
-                        self.stats_logger.push_log(eval_detections(gt_detections, detections), append=False)
+                        self.eval_detections(gt_detections, detections)
 
                 else:
                     raise NotImplementedError

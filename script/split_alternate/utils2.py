@@ -125,73 +125,108 @@ def map_xyxy_to_xyhw(xyxy_box):
 def map_xyhw_to_xyxy(xyhw_box):
     return np.array((xyhw_box[0], xyhw_box[1], xyhw_box[2] + xyhw_box[0], xyhw_box[3] + xyhw_box[1]))
 
-def map_coco_outputs(outputs : {str : torch.Tensor}) -> ({int : [int]}, float):
-    '''Maps the model output (dict with keys boxes, labels, scores) to {label : boxes}'''
+def map_coco_outputs(outputs : {str : torch.Tensor}) -> ({int : {int : (int,)}}, [float]):
+    '''Maps the model output (dict with keys boxes, labels, scores) to {class_label : {id : boxes}}'''
     boxes = outputs['boxes'].detach().numpy()
     labels = outputs['labels'].detach().numpy()
     scores = outputs['scores'].detach().numpy()
     # ignore scores for now
 
     d = {}
+    curr_id = 0
     for i in range(labels.shape[0]):
-        if labels[i] not in DESIRED_CLASSES:
+        class_id = int(labels[i])
+        if class_id not in DESIRED_CLASSES:
             continue
-        if labels[i] in d:
-            d[labels[i]].append(boxes[i])
+
+        if class_id in d:
+            d[class_id][curr_id] = tuple(boxes[i])
         else:
-            d[labels[i]] = [boxes[i]]
+            d[class_id] = {curr_id : tuple(boxes[i])}
+            
+        curr_id+=1
 
     return d, scores
 
-def calc_square_evals(boxes1 : [], boxes2 : []):
-    '''Returns a greedy max score for boxes when the correspondence between boxes is unknown'''
+def map_bbox_ids(pred_boxes_allclass : {int : {int : (int,)}}, gt_boxes_allclass : {int : (int,)}) -> ({int: int}, {int: int}):
+    '''maps indices of the predicted boxes to the ids of the gt boxes and returns the extraneous items
+    input is in the format {class_id : {object_id : bbox_xyxy}}
+    return dict in the form of {pred_index : gt_id} and {class_id : len(gt) - len(pred)}'''
+    index_mapping = {}
 
-    if len(boxes1) > len(boxes2):
-        boxes1, boxes2 = boxes2, boxes1
+    missing_objects = {} # for every class id, >0 means in gt but not in pred, <0 means in pred but not in gt
+    unioned_keys = set(gt_boxes_allclass.keys()).union(set(pred_boxes_allclass.keys()))
 
-    scores = [] # ordered scores
-    for box1 in boxes1:
-        highscore, highind = 0, 0
-        for j, box2 in enumerate(boxes2):
-            curr_score = calculate_bb_iou(box1, box2)
+    for class_id in unioned_keys:
+        if class_id not in pred_boxes_allclass:
+            missing_objects[class_id] = len(gt_boxes_allclass[class_id])
+            continue
 
-            if curr_score > highscore:
-                highscore, highind = curr_score, j
+        if class_id not in gt_boxes_allclass:
+            missing_objects[class_id] = -len(pred_boxes_allclass[class_id])
+            continue
 
-        if highind < len(boxes2)-1:
-            boxes2 = boxes2[:highind] + boxes2[highind+1:]
+        gt_boxes, pred_boxes = gt_boxes_allclass[class_id], pred_boxes_allclass[class_id]
+        missing_objects[class_id] = len(gt_boxes) - len(pred_boxes)
+
+        if len(gt_boxes) < len(pred_boxes):
+            for id_gt, gt_box in gt_boxes.items(): # gt boxes on the outside
+                highscore, highj = -1, -1
+                for id_pred, pred_box in pred_boxes.items():
+                    if id_pred in index_mapping:
+                        continue
+
+                    curr_score = calculate_bb_iou(gt_box, pred_box)
+
+                    if curr_score >= highscore:
+                        highscore, highj, = curr_score, id_pred
+
+                index_mapping[highj] = id_gt
         else:
-            boxes2 = boxes2[:highind]
+            used_gt = set()
+            for id_pred, pred_box in pred_boxes.items(): # gt boxes on the outside
+                highscore, highj = -1, -1
+                for id_gt, gt_box in gt_boxes.items():
+                    if id_gt in used_gt:
+                        continue
 
-        scores.append(round(highscore, 5))
+                    curr_score = calculate_bb_iou(gt_box, pred_box)
 
-    return scores
+                    if curr_score >= highscore:
+                        highscore, highj, = curr_score, id_gt
 
+                index_mapping[id_pred] = highj
+                used_gt.add(highj)
 
-def eval_detections(gt_detections : {int : [[int]]}, generated_detections : {int : [[int]]}) -> {}:
-    '''Detections are in the format of {class : [boxes]}
-    Returns in the format of {class : (one of IoU, 2 for missed, 3 for extra)}'''
+    return index_mapping, missing_objects
+
+def eval_detections(gt_detections : {int : (int,)}, pred_detections : {int : (int,)},
+                    object_id_mapping : {int : int}) -> ({int : float}, {int}):
+    '''Detections are in the format of {object_id : [box]} and {pred_oid : gt_oid}
+    Returns in the format of {object_id (from either) : score}'''
     # assert len(gt_detections) == len(generated_detections)
-
-    unioned_keys = set(gt_detections.keys()).union(set(generated_detections.keys()))
     scores = {}
-    gt, pred = deepcopy(gt_detections), deepcopy(generated_detections)
 
-    for key in unioned_keys:
-        key_format = f'class_{key}'
-        if key not in gt:
-            scores[key_format] = [3 for _ in range(len(pred[key]))]
-        elif key not in pred:
-            scores[key_format] = [2 for _ in range(len(gt[key]))]
-        else:
-            gt_boxes = gt[key]
-            pred_boxes = pred[key]
+    # see if any pred_detections are outdated
+    for object_id in pred_detections.keys():
+        assert object_id in object_id_mapping
 
-            scores[key_format] = calc_square_evals(gt_boxes, pred_boxes)
+        gt_object_id = object_id_mapping[object_id]
+        key_format = f'pred_{gt_object_id}'
 
-            if len(gt_boxes) > len(pred_boxes): # more gt boxes means scores[key] has missing entries
-                scores[key_format] += [2] * (len(gt_boxes) - len(pred_boxes))
-            elif len(gt_boxes) < len(pred_boxes): # more gt boxes means scores[key] has missing entries
-                scores[key_format] += [3] * (len(pred_boxes) - len(gt_boxes))
+        if gt_object_id not in gt_detections: #in tracker but not in annotations
+            scores[key_format] = -1
+            continue
 
-    return scores
+        scores[key_format] = calculate_bb_iou(gt_detections[gt_object_id], pred_detections[object_id])
+
+    # check if there are any missing detections
+    pred_object_ids = set(object_id_mapping.values())
+
+    missing_detections = set()
+
+    for gt_object_id in gt_detections.keys():
+        if gt_object_id not in pred_object_ids:
+            missing_detections.add(gt_object_id)
+
+    return scores, missing_detections

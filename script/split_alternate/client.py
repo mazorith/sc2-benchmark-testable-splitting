@@ -252,12 +252,7 @@ class Client:
             tensors_to_measure, other_info = self.client_model(torch.from_numpy(data_reshape).float())
             compression_time = time.time() - now
 
-            size_compressed = 0
-            for x in tensors_to_measure:
-                if type(x) is dict:
-                    size_compressed += sum(get_tensor_size(y) for y in x)
-                else:
-                    size_compressed += get_tensor_size(x)
+            size_compressed = get_tensor_size(tensors_to_measure)
 
             message = {'timestamp': time.time(), 'data': (*tensors_to_measure, *other_info)}
 

@@ -6,18 +6,24 @@ from params import PARAMS, DESIRED_CLASSES
 import torch
 from copy import deepcopy
 
-def get_tensor_size(tensor):
-    if type(tensor) is bytes:
-        return len(tensor)
-    if type(tensor) is str:
-        return sys.getsizeof(tensor)
-
+def get_tensor_size(tensor) -> int:
+    # "primitive" types
     if tensor is None:
         return 0
-    elif 'QuantizedTensor' in str(type(tensor)):
+    if type(tensor) is bytes:
+        return len(tensor)
+    if 'QuantizedTensor' in str(type(tensor)):
         return tensor.tensor.storage().__sizeof__()
+    if 'Tensor' in str(type(tensor)):
+        return tensor.storage().__sizeof__()
 
-    return tensor.storage().__sizeof__()
+    if type(tensor) is dict:
+        return sum(get_tensor_size(x) for x in tensor.values())
+
+    if type(tensor) in (list, tuple):
+        return sum(get_tensor_size(x) for x in tensor)
+
+    return sys.getsizeof(tensor)
 
 def encode_frame(frame : np.ndarray):
     '''uses cv2.imencode to encode a frame'''

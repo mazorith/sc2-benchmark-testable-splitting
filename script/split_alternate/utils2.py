@@ -25,6 +25,16 @@ def get_tensor_size(tensor) -> int:
 
     return sys.getsizeof(tensor)
 
+def move_data_to_device(data : (), device):
+    new_data = []
+    for d in data:
+        if 'Tensor' in str(type(data)):
+            new_data.append(d.to(device))
+        else:
+            new_data.append(d)
+
+    return new_data
+
 def encode_frame(frame : np.ndarray):
     '''uses cv2.imencode to encode a frame'''
     if frame.shape[2] != 3:

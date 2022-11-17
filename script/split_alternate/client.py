@@ -81,6 +81,9 @@ class Client:
                     self.server_model = nn.Identity()
                 else:
                     self.server_model = model_2.ServerModel(student_model)
+
+                self.client_model.to(self.compressor_device)
+                self.server_model.to(self.detector_device)
             else:
                 raise NotImplementedError
 
@@ -103,11 +106,14 @@ class Client:
                 else:
                     raise NotImplementedError
 
+                self.server_model.to(self.detector_device)
+
     def __init__(self, server_connect = PARAMS['USE_NETWORK'], run_type = PARAMS['RUN_TYPE'],
                  stats_log_dir = PARAMS['STATS_LOG_DIR'], dataset = PARAMS['DATASET'], tracking = PARAMS['TRACKING'],
                  detection = PARAMS['DETECTION'], detection_compression = PARAMS['DET_COMPRESSOR'],
                  refresh_type = PARAMS['BOX_REFRESH'], run_eval = PARAMS['EVAL'],
-                 detector_model = PARAMS['DETECTOR_MODEL'], detector_device = PARAMS['DETECTION_DEVICE']):
+                 detector_model = PARAMS['DETECTOR_MODEL'], detector_device = PARAMS['DETECTION_DEVICE'],
+                 compressor_device = PARAMS['COMPRESSOR_DEVICE']):
 
         self.socket, self.message = None, None
         self.logger, self.dataset, self.stats_logger = ConsoleLogger(), Dataset(dataset=dataset), \
@@ -116,7 +122,7 @@ class Client:
         self.detection_compression, self.refresh_type = detection_compression, refresh_type
         self.run_eval, self.detector_model = run_eval, detector_model
 
-        self.detector_device = detector_device
+        self.detector_device, self.compressor_device = detector_device, compressor_device
 
         self.class_map_detection = {}
 
@@ -201,14 +207,9 @@ class Client:
 
             client_data = self.message['data']
             if self.detection_compression == 'model':
-                client_data_inputs = []
-                for x in client_data: # move tensors to cuda if necessary
-                    if 'Tensor' in str(type(x)):
-                        client_data_inputs.append(x.to(self.detector_device))
-                    else:
-                        client_data_inputs.append(x)
+                client_data_device = move_data_to_device(client_data, self.detector_device)
                 if self.detector_model == 'faster_rcnn':
-                    model_outputs = self.server_model(*client_data_inputs)[0]
+                    model_outputs = self.server_model(*client_data_device)[0]
                 else:
                     raise NotImplementedError('No specified detector model exists.')
             elif self.detection_compression == 'classical':
@@ -257,7 +258,7 @@ class Client:
 
             # collect model runtime
             now = time.time()
-            tensors_to_measure, other_info = self.client_model(torch.from_numpy(data_reshape).float())
+            tensors_to_measure, other_info = self.client_model(torch.from_numpy(data_reshape).float().to(self.compressor_device))
             compression_time = time.time() - now
 
             size_compressed = get_tensor_size(tensors_to_measure)

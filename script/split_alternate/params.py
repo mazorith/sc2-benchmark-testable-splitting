@@ -42,6 +42,7 @@ PARAMS['TRACKER'] = 'MEDIANFLOW' # tracker algorithm
 # params for the object detection
 PARAMS['DETECTION'] = True # if false, uses ground truth labels for the detection (to eval tracking) – false makes it offline
 PARAMS['DET_COMPRESSOR'] = 'model' # 'model' vs. 'classical': model is bottleneck, classical is classical compression
+PARAMS['COMPRESSOR_DEVICE'] = 'cpu'
 PARAMS['DETECTION_DEVICE'] = 'cpu'
 PARAMS['DETECTOR_MODEL'] = 'faster_rcnn' # specific detector model
 # PARAMS['DETECTOR_CKPT'] = 'models/Split/model_2' # {det_client}_client is the location of the saved weights

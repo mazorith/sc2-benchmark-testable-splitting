@@ -63,6 +63,36 @@ def parse_visdrone_object(file_txt, frame, obj):
 def convert_visdrone(bb):
     return [bb[0], bb[1], bb[0] + bb[2], bb[1] + bb[3]]
 
+def virat_iou(actual_bb, track_bb):
+    return bb_intersection_over_union(convert_visdrone(actual_bb), convert_visdrone(track_bb))
+
+def parse_virat(file_txt, frame): # same as visdrone except split based off , vs whitespace
+    lines = None
+    with open(file_txt) as f:
+        lines = f.readlines()
+
+    parsed_lines = {}
+    for l in lines:
+        if int(l.split(' ')[2]) == frame:
+            split = map(int,l.split(' ')[3:7])
+            parsed_lines[int(l.split(' ')[0])] = tuple(split)
+    return parsed_lines   
+
+def parse_virat_object(file_txt, frame, obj):
+    lines = None
+    with open(file_txt) as f:
+        lines = f.readlines()
+
+    for l in lines:
+
+        if int(l.split(' ')[2]) == frame and int(l.split(' ')[0]) == obj:
+            split = map(int,l.split(' ')[3:7])
+            return tuple(split)
+            
+
+    return (-1,-1,-1,-1)
+
+
 def init_tracker(tracker_type="MEDIANFLOW"):
     tracker = None
     if tracker_type == 'BOOSTING':
@@ -84,67 +114,162 @@ def init_tracker(tracker_type="MEDIANFLOW"):
     return tracker
 
 class Tracker():
+    # uses dictionary with single trackers instead of multitracker object to keep track of object with ids
 
     def __init__(self, frame, bboxes, type="MEDIANFLOW"):
-        self.multiTracker = cv2.MultiTracker_create()
-        for bbox in bboxes:
-            self.multiTracker.add(init_tracker(type), frame, bbox)
+        self.multitracker = {}
+        # self.multiTracker = cv2.MultiTracker_create()
+        for obj_id in bboxes.keys():
+            tracker = init_tracker(type)
+            tracker.init(frame, bboxes[obj_id])
+            self.multitracker[obj_id] = tracker
         self.logger = ConsoleLogger()
 
     def update(self, frame):
         start_time = time.time()
-        success, bboxes = self.multiTracker.update(frame)
-        if not success:
-            self.logger.log_error('Tracker Update Failed')
-            return None
-        self.logger.log_info("Total Execution Time = %s seconds" % (time.time() - start_time))
+        bboxes = {}
+        # success, bboxes = self.multiTracker.update(frame)
+        # if not success:
+        #     self.logger.log_error('Tracker Update Failed')
+        #     return None
+        for obj_id in self.multitracker.keys():
+            success, bbox = self.multitracker[obj_id].update(frame)
+            if not success:
+                # self.logger.log_error('Tracker Update Failed')
+                return None
+            bboxes[obj_id] = bbox
+        # self.logger.log_info("Total Execution Time = %s seconds" % (time.time() - start_time))
         return bboxes
 
 
-def run_multitracker():
-    video_dir = "/home/ian/dataset/visdrone2019/videos/"
-    annotations_dir = "/home/ian/dataset/visdrone2019/annotations"
-    video = "/home/ian/dataset/visdrone2019/videos/uav0000013_00000_v.avi"
-    annotations = "/home/ian/dataset/visdrone2019/annotations/uav0000013_00000_v.txt"
-    video_id = "uav0000013_00000_v"
+# def run_multitracker():
+#     video_dir = "/home/ian/dataset/visdrone2019/videos/"
+#     annotations_dir = "/home/ian/dataset/visdrone2019/annotations"
+#     video = "/home/ian/dataset/visdrone2019/videos/uav0000013_00000_v.avi"
+#     annotations = "/home/ian/dataset/visdrone2019/annotations/uav0000013_00000_v.txt"
+#     video_id = "uav0000013_00000_v"
 
-    stats_logger = DictionaryStatsLogger(logfile=f"{PARAMS['STATS_LOG_DIR']}/tracking-30cap-{PARAMS['TRACKING_SET']}-{CURR_DATE}.log", flush_limit = -1)
+#     stats_logger = DictionaryStatsLogger(logfile=f"{PARAMS['STATS_LOG_DIR']}/tracking-30cap-{PARAMS['TRACKING_SET']}-{CURR_DATE}.log", flush_limit = -1)
     
-    fnames = [x for x in os.listdir(video_dir) if '.avi' in x]
+#     fnames = [x for x in os.listdir(video_dir) if '.avi' in x]
+#     for f in fnames:
+#         annot = f[:-4] + '.txt'
+#         annot_path = f'{annotations_dir}/{annot}'
+#         video_path = f'{video_dir}/{f}'
+
+#         bboxes = parse_visdrone(annot_path,1)
+#         video = cv2.VideoCapture(video_path)
+
+#         success, frame = video.read()
+#         if not success:
+#             print("Video not read")
+#             return
+
+#         multitracker = Tracker(frame, list(bboxes.values())[:30])
+
+#         for frame_num in range(2,11):
+#             print("Frame = " + str(frame_num))
+#             success, frame = video.read()
+#             if not success:
+#                 print("Video not read")
+#                 break
+
+#             start_time = time.time()
+#             # print(frame.shape)
+#             bbox = multitracker.update(frame)
+#             if bbox is None:
+#                 break
+
+#             execution_time = time.time() - start_time
+#             print("Total Execution Time = %s seconds" % (execution_time))
+#             stats_logger.push_log({'execution_time':execution_time, 'objects_tracked': 30, 'frame':frame_num, 'video':f })
+#             stats_logger.push_log({}, append=True)
+
+#     stats_logger.flush()
+def get_closest_read_frame(frame_num):
+    i = int(frame_num)%10 -1
+    if i <0:
+        i = 10
+    return i
+
+def run_multitracker():
+    #video_dir = "/../../../../../dataset/VIRAT/videos_original/"
+    video_dir = "/home/ian/dataset/VIRAT/videos_original/"
+    #annotations_dir = "/../../../../../dataset/VIRAT/annotations"
+    annotations_dir = "/home/ian/dataset/VIRAT/annotations"
+    video, annotations, video_id = None, None, None
+    # video = "/home/ian/dataset/visdrone2019/videos/uav0000013_00000_v.avi"
+    # annotations = "/home/ian/dataset/visdrone2019/annotations/uav0000013_00000_v.txt"
+    # video_id = "uav0000013_00000_v"
+
+
+    stats_logger = DictionaryStatsLogger(logfile=f"{PARAMS['STATS_LOG_DIR']}/tracking-nocap-virat-acc-{CURR_DATE}.log", flush_limit = -1)
+    
+    fnames = [x for x in os.listdir(video_dir) if '.mp4' in x]
     for f in fnames:
-        annot = f[:-4] + '.txt'
-        annot_path = f'{annotations_dir}/{annot}'
-        video_path = f'{video_dir}/{f}'
+        try:
+            annot = f[:-4] + '.viratdata.objects.txt'
+            annot_path = f'{annotations_dir}/{annot}'
+            video_path = f'{video_dir}/{f}'
 
-        bboxes = parse_visdrone(annot_path,1)
-        video = cv2.VideoCapture(video_path)
+            bboxes = parse_virat(annot_path,1)
+            video = cv2.VideoCapture(video_path)
+            # print(bboxes)
 
-        success, frame = video.read()
-        if not success:
-            print("Video not read")
-            return
-
-        multitracker = Tracker(frame, list(bboxes.values())[:30])
-
-        for frame_num in range(2,11):
-            print("Frame = " + str(frame_num))
             success, frame = video.read()
             if not success:
                 print("Video not read")
-                break
+                return
 
-            start_time = time.time()
-            # print(frame.shape)
-            bbox = multitracker.update(frame)
-            if bbox is None:
-                break
+            multitracker = Tracker(frame, bboxes)
+            # print(1)
+            for frame_num in range(2,300):
+                print("Frame = " + str(frame_num))
+                success, frame = video.read()
+                if not success:
+                    print("Video not read")
+                    break
 
-            execution_time = time.time() - start_time
-            print("Total Execution Time = %s seconds" % (execution_time))
-            stats_logger.push_log({'execution_time':execution_time, 'objects_tracked': 30, 'frame':frame_num, 'video':f })
-            stats_logger.push_log({}, append=True)
+                start_time = time.time()
+                # print(frame.shape)
+                bbox = multitracker.update(frame)
+                if bbox is None:
+                    break
 
-    stats_logger.flush()
+                execution_time = time.time() - start_time
+                
+                print("Total Execution Time = %s seconds" % (execution_time))
+
+                accuracy = []
+                for obj_id in bboxes.keys():
+                    # print("Entire bbox: " + str(bbox))
+                    # print("bboxes: " + str(bboxes))
+                    # print("bbox keys: " + str(list(bboxes.keys())))
+                  
+                    # print("obj_id: " + obj_id)
+                    actual_bbox = parse_virat_object(annot_path, frame_num, obj_id)
+                    
+
+                    # print("actual_bbox " + str(actual_bbox))
+                    if actual_bbox != (-1,-1,-1,-1):
+
+                        acc = virat_iou(actual_bbox, bboxes[obj_id])
+
+                        accuracy.append(acc)
+                #print(accuracy)
+                
+                stats_logger.push_log({'execution_time':execution_time, 'objects_tracked': len(bboxes.values()), 'frame':frame_num,'distance':get_closest_read_frame(frame_num), 'video':f , 'accuracy':accuracy})
+                stats_logger.push_log({}, append=True)
+
+                if frame_num %10 == 1:
+                    bboxes = parse_virat(annot_path,frame_num)
+                    multitracker = Tracker(frame, bboxes)
+
+            stats_logger.flush()
+        except FileNotFoundError:
+            pass
+            
+        
 
 
 
@@ -179,7 +304,7 @@ def run_multitracker():
     #     print("Total Execution Time = %s seconds" % (execution_time))
     #     stats_logger.push_log({'execution_time':execution_time, 'objects_tracked': len(bboxes), 'frame':frame_num, 'video':video_id })
     #     stats_logger.push_log({}, append=True)
-    #     # actual_bbox = parse_visdrone_object(annotations, frame_num, )    
+    #     # actual_bbox = parse_visdrone_object(annotations, frame_num, id)    
 
     #     # accuracy = []
     #     # for i in range(10):
@@ -190,7 +315,7 @@ def run_multitracker():
 
 if __name__ == '__main__':
     # print(cv2.__version__)
-    video = "/home/ian/dataset/visdrone2019/videos/uav0000013_00000_v.avi"
-    annotations = "/home/ian/dataset/visdrone2019/annotations/uav0000013_00000_v.txt"
+    # video = "/home/ian/dataset/visdrone2019/videos/uav0000013_00000_v.avi"
+    # annotations = "/home/ian/dataset/visdrone2019/annotations/uav0000013_00000_v.txt"
     run_multitracker()
     # print(bboxes)

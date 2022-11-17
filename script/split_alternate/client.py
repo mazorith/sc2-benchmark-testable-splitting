@@ -107,7 +107,7 @@ class Client:
                  stats_log_dir = PARAMS['STATS_LOG_DIR'], dataset = PARAMS['DATASET'], tracking = PARAMS['TRACKING'],
                  detection = PARAMS['DETECTION'], detection_compression = PARAMS['DET_COMPRESSOR'],
                  refresh_type = PARAMS['BOX_REFRESH'], run_eval = PARAMS['EVAL'],
-                 detector_model = PARAMS['DETECTOR_MODEL']):
+                 detector_model = PARAMS['DETECTOR_MODEL'], detector_device = PARAMS['DETECTION_DEVICE']):
 
         self.socket, self.message = None, None
         self.logger, self.dataset, self.stats_logger = ConsoleLogger(), Dataset(dataset=dataset), \
@@ -115,6 +115,8 @@ class Client:
         self.server_connect, self.tracking, self.detection, self.run_type = server_connect, tracking, detection, run_type
         self.detection_compression, self.refresh_type = detection_compression, refresh_type
         self.run_eval, self.detector_model = run_eval, detector_model
+
+        self.detector_device = detector_device
 
         self.class_map_detection = {}
 
@@ -199,13 +201,19 @@ class Client:
 
             client_data = self.message['data']
             if self.detection_compression == 'model':
+                client_data_inputs = []
+                for x in client_data: # move tensors to cuda if necessary
+                    if 'Tensor' in str(type(x)):
+                        client_data_inputs.append(x.to(self.detector_device))
+                    else:
+                        client_data_inputs.append(x)
                 if self.detector_model == 'faster_rcnn':
-                    model_outputs = self.server_model(*client_data)[0]
+                    model_outputs = self.server_model(*client_data_inputs)[0]
                 else:
                     raise NotImplementedError('No specified detector model exists.')
             elif self.detection_compression == 'classical':
                 decoded_frame = decode_frame(client_data)
-                model_outputs = self.server_model([torch.from_numpy(decoded_frame).float()])[0] # first frame
+                model_outputs = self.server_model([torch.from_numpy(decoded_frame).float().to(self.detector_device)])[0] # first frame
             else:
                 raise NotImplementedError('No other compression method exists.')
 

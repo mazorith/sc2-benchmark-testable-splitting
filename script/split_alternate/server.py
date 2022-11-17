@@ -124,8 +124,14 @@ class Server:
     def process_data(self, client_data):
         '''processes the message using one of the detection models'''
         if self.detection_compression == 'model':
+            client_data_inputs = []
+            for x in client_data: # move tensors to cuda if necessary
+                if 'Tensor' in str(type(x)):
+                    client_data_inputs.append(x.to(self.detector_device))
+                else:
+                    client_data_inputs.append(x)
             if self.detector_model == 'faster_rcnn':
-                model_outputs = self.server_model(*client_data)[0]
+                model_outputs = self.server_model(*client_data_inputs)[0]
             else:
                 raise NotImplementedError('No specified detector model exists.')
         elif self.detection_compression == 'classical':

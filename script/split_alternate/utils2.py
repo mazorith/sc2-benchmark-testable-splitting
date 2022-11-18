@@ -79,6 +79,9 @@ def extract_frames(cap, frame_limit, vid_shape, transpose_frame = False) -> (boo
     if video_length < frame_limit:
         return False, None
 
+    if vid_shape is None:
+        vid_shape = (720, 1280)
+
     random_start = int(np.random.random() * (video_length - frame_limit))
     frames = []
     for i in range(random_start, random_start + frame_limit):

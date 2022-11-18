@@ -61,6 +61,7 @@ try:
   from param_overrides import PARAM_OVERRIDES
   PARAMS.update(PARAM_OVERRIDES)
 except:
+  print('NO PARAM OVERRIDES DETECTED')
   pass
 
 COCO_CLASS_DICT = {0: u'__background__',

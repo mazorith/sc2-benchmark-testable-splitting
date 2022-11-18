@@ -72,7 +72,7 @@ def decode_frame(encoded_frame):
     '''decodes the encode_frame and returns it as a float array (between 0 and 1) and 3xHxW'''
     return cv2.imdecode(encoded_frame, cv2.IMREAD_COLOR).transpose(2,0,1) / 256
 
-def extract_frames(cap, frame_limit, vid_shape = PARAMS['VIDEO_SHAPE'], transpose_frame = False) -> (bool, np.ndarray):
+def extract_frames(cap, frame_limit, vid_shape, transpose_frame = False) -> (bool, np.ndarray):
     '''From a cv2 VideoCapture, return a random frame_limit subset of the video'''
     # get 15 frames from random starting point
     video_length = cap.get(7)

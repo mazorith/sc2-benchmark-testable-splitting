@@ -42,7 +42,7 @@ class Dataset:
         if not cap:
             cap = cv2.VideoCapture(fname)
 
-        success, frames = extract_frames(cap, frame_limit=frame_limit, transpose_frame=transpose)
+        success, frames = extract_frames(cap, frame_limit=frame_limit, transpose_frame=transpose, vid_shape=shape)
 
         if not success:
             self.logger.log_debug(f'OpenCV Failed on file {fname}')
@@ -180,7 +180,7 @@ class Dataset:
 
             yield rand_tensor, size_uncompressed, ''
 
-    def get_kitti_dataset(self, col_names = PARAMS['KITTI_NAMES']):
+    def get_kitti_dataset(self, col_names = PARAMS['KITTI_NAMES'], shape = PARAMS['VIDEO_SHAPE']):
         # returns in the format (img, img_size, (class, obj_id), bb_list, fname, frame_number)
         data_dir = f'{self.data_dir}/KITTI/data_tracking_image_2/training'
         videos = sorted([f'{data_dir}/image_02/{x}' for x in os.listdir(f'{data_dir}/image_02') if x.isnumeric()]) #dddd for video id
@@ -201,7 +201,7 @@ class Dataset:
 
                 time_since_previous_frame = time.time()
 
-                img = np.array(Image.open(fname))
+                img = np.array(Image.open(fname).resize(shape))
                 df_slice = label_df.loc[label_df['timestep'] == j]
 
                 # get the object indices
@@ -219,6 +219,3 @@ class Dataset:
                 bb_list = list(zip(x0s, y0s, x1s, y1s))
 
                 yield img, sys.getsizeof(img), (classes_id, object_ids), bb_list, fname, j == 0
-
-            # only test a single video
-            break

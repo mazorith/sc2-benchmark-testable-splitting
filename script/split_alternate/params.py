@@ -11,7 +11,7 @@ DESIRED_CLASSES = {1,2,3}
 PARAMS = {}
 # in the offline case, client.py will have the server model as well
 # otherwise
-PARAMS['USE_NETWORK'] = True
+PARAMS['USE_NETWORK'] = False
 PARAMS['HOST'] = '128.195.54.126' # localhost is '127.0.0.1', network host to use is '128.195.54.126'
 PARAMS['PORT'] = 1234
 PARAMS['SOCK_BUFFER_SIZE'] = 16384
@@ -55,6 +55,13 @@ PARAMS['REFRESH_ITERS'] = 10 # for fixed method, how many fixed iterations to re
 
 # params for model yamls
 PARAMS['FASTER_RCNN_YAML'] = '../../configs/coco2017/supervised_compression/entropic_student/faster_rcnn_splittable_resnet50-fp-beta0.08_fpn_from_faster_rcnn_resnet50_fpn.yaml'
+
+try:
+  print('USING PARAM OVERRIDES')
+  from param_overrides import PARAM_OVERRIDES
+  PARAMS.update(PARAM_OVERRIDES)
+except:
+  pass
 
 COCO_CLASS_DICT = {0: u'__background__',
  1: u'person',

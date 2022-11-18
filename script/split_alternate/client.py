@@ -16,13 +16,6 @@ from tracker import Tracker
 import traceback
 
 from torchdistill.common import yaml_util
-from sc2bench.models.detection.registry import load_detection_model
-from sc2bench.models.detection.wrapper import get_wrapped_detection_model
-
-def load_model(model_config, device):
-    if 'detection_model' not in model_config:
-        return load_detection_model(model_config, device)
-    return get_wrapped_detection_model(model_config, device)
 
 def create_input(data):
     return data
@@ -113,9 +106,9 @@ class Client:
                  detection = PARAMS['DETECTION'], detection_compression = PARAMS['DET_COMPRESSOR'],
                  refresh_type = PARAMS['BOX_REFRESH'], run_eval = PARAMS['EVAL'],
                  detector_model = PARAMS['DETECTOR_MODEL'], detector_device = PARAMS['DETECTION_DEVICE'],
-                 compressor_device = PARAMS['COMPRESSOR_DEVICE']):
+                 compressor_device = PARAMS['COMPRESSOR_DEVICE'], socket_buffer_size = PARAMS['SOCK_BUFFER_SIZE']):
 
-        self.socket, self.message = None, None
+        self.socket, self.message, self.socket_buffer_size = None, None, socket_buffer_size
         self.logger, self.dataset, self.stats_logger = ConsoleLogger(), Dataset(dataset=dataset), \
                                                        DictionaryStatsLogger(logfile=f"{stats_log_dir}/client-{dataset}-{CURR_DATE}.log")
         self.server_connect, self.tracking, self.detection, self.run_type = server_connect, tracking, detection, run_type
@@ -134,6 +127,7 @@ class Client:
         self.logger.log_debug('Connecting from client')
         self.socket = socket(AF_INET, SOCK_STREAM)
         self.socket.connect((server_ip, server_port))
+        self.socket.setsockopt(SOL_SOCKET, SO_SNDBUF, self.socket_buffer_size)
         self.logger.log_info('Successfully connected to socket')
 
     def _client_handshake(self):
@@ -175,6 +169,7 @@ class Client:
     def _get_server_data(self):
         '''returns the server data in any format'''
         assert self.server_connect
+        self.logger.log_debug('Waiting for server data.')
 
         collected_message = False
         while not collected_message:
@@ -207,7 +202,7 @@ class Client:
 
             client_data = self.message['data']
             if self.detection_compression == 'model':
-                client_data_device = move_data_to_device(client_data, self.detector_device)
+                client_data_device = move_data_list_to_device(client_data, self.detector_device)
                 if self.detector_model == 'faster_rcnn':
                     model_outputs = self.server_model(*client_data_device)[0]
                 else:
@@ -219,7 +214,7 @@ class Client:
                 raise NotImplementedError('No other compression method exists.')
 
             self.logger.log_debug("Generated new BB with model (offline).")
-            return model_outputs
+            return move_data_dict_to_device(model_outputs, 'cpu')
 
     def handle_server_data(self, server_data, server_model = PARAMS['DETECTOR_MODEL']):
         '''Handles the server data, ie. formatting the model outputs into eval-friendly
@@ -259,6 +254,7 @@ class Client:
             # collect model runtime
             now = time.time()
             tensors_to_measure, other_info = self.client_model(torch.from_numpy(data_reshape).float().to(self.compressor_device))
+            tensors_to_measure, other_info = move_data_list_to_device(tensors_to_measure, 'cpu'), move_data_list_to_device(other_info, 'cpu')
             compression_time = time.time() - now
 
             size_compressed = get_tensor_size(tensors_to_measure)

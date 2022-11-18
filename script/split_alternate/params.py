@@ -3,16 +3,18 @@ from datetime import datetime
 # constants, COCO constants defined below
 LEVELS = {'DEBUG' : 0, 'INFO' : 1, 'ERROR' : 2, 'NOTHING' : 3}
 # KITTI classes (1,2,3) match COCO, ignore Vans
-KITTI_CLASSES = {'DontCare' : -1, 'Van': 0, 'Cyclist' : 2, 'Pedestrian' : 1, 'Car' : 3}
+KITTI_CLASSES = {'DontCare' : -1, 'Van': 0, 'Cyclist' : 2, 'Pedestrian' : 1, 'Car' : 3, 'Misc' : 4,
+                 'Truck' : 8, 'Tram' : 10, 'Person' : 1}
 CURR_DATE = datetime.now().strftime('%m-%d_%H:%M:%S')
 DESIRED_CLASSES = {1,2,3}
 
 PARAMS = {}
 # in the offline case, client.py will have the server model as well
 # otherwise
-PARAMS['USE_NETWORK'] = False
-PARAMS['HOST'] = '127.0.0.1'
-PARAMS['PORT'] = 55559
+PARAMS['USE_NETWORK'] = True
+PARAMS['HOST'] = '128.195.54.126' # localhost is '127.0.0.1', network host to use is '128.195.54.126'
+PARAMS['PORT'] = 1234
+PARAMS['SOCK_BUFFER_SIZE'] = 16384
 
 # params for directories + misc things
 PARAMS['STATS_LOG_DIR'] = 'logs'

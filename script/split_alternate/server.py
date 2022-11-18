@@ -10,13 +10,6 @@ from utils2 import *
 import traceback
 
 from torchdistill.common import yaml_util
-from sc2bench.models.detection.registry import load_detection_model
-from sc2bench.models.detection.wrapper import get_wrapped_detection_model
-
-def load_model(model_config, device):
-    if 'detection_model' not in model_config:
-        return load_detection_model(model_config, device)
-    return get_wrapped_detection_model(model_config, device)
 
 def get_student_model(yaml_file = PARAMS['FASTER_RCNN_YAML']):
     if yaml_file is None:
@@ -55,17 +48,21 @@ class Server:
             else:
                 raise NotImplementedError
 
+        self.server_model.to(self.detector_device)
+
         pass
 
     def __init__(self, server_connect = PARAMS['USE_NETWORK'], detection_compression = PARAMS['DET_COMPRESSOR'],
-                 detector_model = PARAMS['DETECTOR_MODEL'], detector_device = PARAMS['DETECTION_DEVICE']):
-        self.socket, self.connection, self.server_connect = None, None, server_connect
+                 detector_model = PARAMS['DETECTOR_MODEL'], detector_device = PARAMS['DETECTION_DEVICE'],
+                 socket_buffer_size = PARAMS['SOCK_BUFFER_SIZE']):
+        self.socket, self.connection, self.server_connect, self.socket_buffer_size = None, None, server_connect, socket_buffer_size
         self.data, self.logger, self.stats_logger = None, ConsoleLogger(), DictionaryStatsLogger(f"{PARAMS['STATS_LOG_DIR']}/server-{PARAMS['DATASET']}-{CURR_DATE}.log")
         self.detection_compression, self.detector_model, self.detector_device = detection_compression, detector_model, detector_device
         self._init_model()
 
     def listen(self, server_ip, server_port):
         self.socket = socket(AF_INET, SOCK_STREAM)
+        self.socket.setsockopt(SOL_SOCKET, SO_SNDBUF, self.socket_buffer_size)
         self.logger.log_info(f"Binding to {server_ip}:{server_port}")
         self.socket.bind((server_ip, server_port))
         self.socket.listen(1)
@@ -124,7 +121,7 @@ class Server:
     def process_data(self, client_data):
         '''processes the message using one of the detection models'''
         if self.detection_compression == 'model':
-            client_data_device = move_data_to_device(client_data, self.detector_device)
+            client_data_device = move_data_list_to_device(client_data, self.detector_device)
             if self.detector_model == 'faster_rcnn':
                 model_outputs = self.server_model(*client_data_device)[0]
             else:
@@ -137,7 +134,10 @@ class Server:
             raise NotImplementedError('No other compression method exists.')
 
         self.logger.log_debug("Generated new BB with model (online).")
-        return model_outputs
+        cpu_model_outputs = move_data_dict_to_device(model_outputs, 'cpu')
+        if 'masks' in cpu_model_outputs:
+            del cpu_model_outputs['masks']
+        return cpu_model_outputs
 
     def start_server_loop(self):
         '''main loop'''
@@ -154,11 +154,14 @@ class Server:
                 response = self.process_data(data)
                 process_time = round(time.time() - curr_time, 4)
 
-                self.logger.log_info('Sending response.')
+                response_size = get_tensor_size(response)
+
+                self.logger.log_info(f'Sending response of size {response_size}.')
 
                 self.send_response(response)
 
-                self.stats_logger.push_log({'processing_time' : process_time, 'iteration' : iteration_num}, append=True)
+                self.stats_logger.push_log({'processing_time' : process_time, 'iteration' : iteration_num,
+                                            'response_size' : response_size}, append=True)
                 iteration_num += 1
 
                 time_since_processed_lass_message = time.time()
@@ -179,7 +182,7 @@ class Server:
         self.connection.sendall(data)
 
         ack = self.connection.recv(1)
-        self.logger.log_debug('Received the ack from the response.')
+        self.logger.log_debug(f'Received the ack {ack} from the response.')
 
     def close(self):
         self.stats_logger.flush()

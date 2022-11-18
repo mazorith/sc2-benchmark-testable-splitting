@@ -6,6 +6,13 @@ from params import PARAMS, DESIRED_CLASSES
 import torch
 from copy import deepcopy
 
+def load_model(model_config, device):
+    if 'detection_model' not in model_config:
+        from sc2bench.models.detection.registry import load_detection_model
+        return load_detection_model(model_config, device)
+    from sc2bench.models.detection.wrapper import get_wrapped_detection_model
+    return get_wrapped_detection_model(model_config, device)
+
 def get_tensor_size(tensor) -> int:
     # "primitive" types
     if tensor is None:
@@ -25,13 +32,23 @@ def get_tensor_size(tensor) -> int:
 
     return sys.getsizeof(tensor)
 
-def move_data_to_device(data : (), device):
+def move_data_list_to_device(data : (), device):
     new_data = []
     for d in data:
-        if 'Tensor' in str(type(data)):
+        if ('Tensor' in str(type(d))) or ('tensor' in str(type(d))):
             new_data.append(d.to(device))
         else:
             new_data.append(d)
+
+    return new_data
+
+def move_data_dict_to_device(data : {}, device):
+    new_data = {}
+    for k, v in data.items():
+        if ('Tensor' in str(type(v))) or ('tensor' in str(type(v))):
+            new_data[k] = v.to(device)
+        else:
+            new_data[k] = v
 
     return new_data
 

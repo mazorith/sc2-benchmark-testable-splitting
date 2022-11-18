@@ -177,7 +177,7 @@ class Dataset:
         assert len(videos) == len(video_labels), f'{videos}, {video_labels}'
 
         time_per_frame = 1/self.simulated_fps
-        SHAPES_TO_TEST = [(400, 400), (600,600), (600, 800), (800, 800), (720, 1280), (1000, 1500)]
+        SHAPES_TO_TEST = [(100, 200), (200, 400), (400, 600), (600, 800), (720, 1280), (1000, 1500)]
 
         for shape in SHAPES_TO_TEST:
             for trial in range(50):

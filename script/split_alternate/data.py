@@ -188,7 +188,6 @@ class Dataset:
                     for j, fname in enumerate(frames):
                         while time.time() - time_since_previous_frame < time_per_frame:
                             time.sleep(0.005)
-                            continue
 
                         time_since_previous_frame = time.time()
 
@@ -237,7 +236,6 @@ class Dataset:
             for j, fname in enumerate(frames):
                 while time.time() - time_since_previous_frame < time_per_frame:
                     time.sleep(0.005)
-                    continue
 
                 time_since_previous_frame = time.time()
 

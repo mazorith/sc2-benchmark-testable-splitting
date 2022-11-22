@@ -23,8 +23,8 @@ class Dataset:
             self.dataset = self.get_youcook2_dataset()
         elif dataset == 'phone':
             self.dataset = self.get_phone_dataset()
-        elif dataset == 'model_toy':
-            self.dataset = self.get_model_toy_dataloader()
+        elif dataset == 'kitti_toy':
+            self.dataset = self.get_model_toy_dataset()
         elif dataset == 'kitti':
             self.dataset = self.get_kitti_dataset()
         else:
@@ -42,7 +42,7 @@ class Dataset:
         if not cap:
             cap = cv2.VideoCapture(fname)
 
-        success, frames = extract_frames(cap, frame_limit=frame_limit, transpose_frame=transpose)
+        success, frames = extract_frames(cap, frame_limit=frame_limit, transpose_frame=transpose, vid_shape=shape)
 
         if not success:
             self.logger.log_debug(f'OpenCV Failed on file {fname}')
@@ -167,20 +167,8 @@ class Dataset:
         # frame_i = (9, 9+frame_limit)
         # for i in range(frame_i[0], frame_i[1]):
 
-    def get_model_toy_dataloader(self):
-        # initial datalaoder as a toy example
-        for i in range(1000):
-            np_rand = np.zeros((1, 3, 1000, 1000)) # create a random tensor
-            # create a random "feature" for the model to detect
-            np_rand[:, :, 100:200, 300:400] = 1 #random 3x100x100 box = 1
-
-            rand_tensor = torch.from_numpy(np_rand).float()
-
-            size_uncompressed = rand_tensor.nelement() * rand_tensor.element_size()
-
-            yield rand_tensor, size_uncompressed, ''
-
-    def get_kitti_dataset(self, col_names = PARAMS['KITTI_NAMES']):
+    def get_model_toy_dataset(self, col_names=PARAMS['KITTI_NAMES']):
+        # uses the KITTI dataset for latency evals
         # returns in the format (img, img_size, (class, obj_id), bb_list, fname, frame_number)
         data_dir = f'{self.data_dir}/KITTI/data_tracking_image_2/training'
         videos = sorted([f'{data_dir}/image_02/{x}' for x in os.listdir(f'{data_dir}/image_02') if x.isnumeric()]) #dddd for video id
@@ -189,19 +177,74 @@ class Dataset:
         assert len(videos) == len(video_labels), f'{videos}, {video_labels}'
 
         time_per_frame = 1/self.simulated_fps
+        SHAPES_TO_TEST = [(100, 200), (200, 400), (400, 600), (600, 800), (720, 1280), (1000, 1500)]
+
+        for trial in range(50):
+            for i, video in enumerate(videos):
+                frames = sorted([f'{video}/{x}' for x in os.listdir(video) if '.jpg' in x or '.png' in x])
+                label_df = pd.read_csv(video_labels[i], delimiter = ' ', header=None, names=col_names)
+                time_since_previous_frame = time.time()
+                for j, fname in enumerate(frames):
+                    for shape in SHAPES_TO_TEST:
+                        while time.time() - time_since_previous_frame < time_per_frame:
+                            time.sleep(0.005)
+
+                        time_since_previous_frame = time.time()
+
+                        img = Image.open(fname)
+                        if shape is None:
+                            img = np.array(img)
+                        else:
+                            img = np.array(img.resize(shape))
+
+                        df_slice = label_df.loc[label_df['timestep'] == j]
+
+                        # get the object indices
+                        object_ids = list(df_slice['object_i'])
+                        # get class names
+                        classes = list(df_slice['class_name'])
+                        classes_id = [KITTI_CLASSES[x] for x in classes]
+
+                        # create list of bounding boxes
+                        x0s = list(df_slice['x0'])
+                        y0s = list(df_slice['y0'])
+                        x1s = list(df_slice['x1'])
+                        y1s = list(df_slice['y1'])
+
+                        bb_list = list(zip(x0s, y0s, x1s, y1s))
+
+                        yield img, sys.getsizeof(img), (classes_id, object_ids), bb_list, fname, j == 0
+
+                break
+
+    def get_kitti_dataset(self, col_names=PARAMS['KITTI_NAMES'], shape=PARAMS['VIDEO_SHAPE']):
+        # returns in the format (img, img_size, (class, obj_id), bb_list, fname, frame_number)
+        data_dir = f'{self.data_dir}/KITTI/data_tracking_image_2/training'
+        videos = sorted([f'{data_dir}/image_02/{x}' for x in os.listdir(f'{data_dir}/image_02') if
+                         x.isnumeric()])  # dddd for video id
+        video_labels = sorted([f'{data_dir}/label_02/{x}' for x in os.listdir(f'{data_dir}/label_02') if
+                               x[:-4].isnumeric()])  # dddd.txt for labels
+
+        assert len(videos) == len(video_labels), f'{videos}, {video_labels}'
+
+        time_per_frame = 1 / self.simulated_fps
 
         for i, video in enumerate(videos):
             frames = sorted([f'{video}/{x}' for x in os.listdir(video) if '.jpg' in x or '.png' in x])
-            label_df = pd.read_csv(video_labels[i], delimiter = ' ', header=None, names=col_names)
+            label_df = pd.read_csv(video_labels[i], delimiter=' ', header=None, names=col_names)
             time_since_previous_frame = time.time()
             for j, fname in enumerate(frames):
                 while time.time() - time_since_previous_frame < time_per_frame:
                     time.sleep(0.005)
-                    continue
 
                 time_since_previous_frame = time.time()
 
-                img = np.array(Image.open(fname))
+                img = Image.open(fname)
+                if shape is None:
+                    img = np.array(img)
+                else:
+                    img = np.array(img.resize(shape))
+
                 df_slice = label_df.loc[label_df['timestep'] == j]
 
                 # get the object indices
@@ -219,6 +262,3 @@ class Dataset:
                 bb_list = list(zip(x0s, y0s, x1s, y1s))
 
                 yield img, sys.getsizeof(img), (classes_id, object_ids), bb_list, fname, j == 0
-
-            # only test a single video
-            break

@@ -72,12 +72,15 @@ def decode_frame(encoded_frame):
     '''decodes the encode_frame and returns it as a float array (between 0 and 1) and 3xHxW'''
     return cv2.imdecode(encoded_frame, cv2.IMREAD_COLOR).transpose(2,0,1) / 256
 
-def extract_frames(cap, frame_limit, vid_shape = PARAMS['VIDEO_SHAPE'], transpose_frame = False) -> (bool, np.ndarray):
+def extract_frames(cap, frame_limit, vid_shape, transpose_frame = False) -> (bool, np.ndarray):
     '''From a cv2 VideoCapture, return a random frame_limit subset of the video'''
     # get 15 frames from random starting point
     video_length = cap.get(7)
     if video_length < frame_limit:
         return False, None
+
+    if vid_shape is None:
+        vid_shape = (720, 1280)
 
     random_start = int(np.random.random() * (video_length - frame_limit))
     frames = []
@@ -232,6 +235,25 @@ def map_bbox_ids(pred_boxes_allclass : {int : {int : (int,)}}, gt_boxes_allclass
                 used_gt.add(highj)
 
     return index_mapping, missing_objects
+
+def remove_classes_from_detections(detections_with_classes : {int : {}}, add_clause = None, return_clause = None):
+    '''returns the {object_id : bbox} detections from a detections_with_classes'''
+    if not add_clause:
+        add_clause = lambda x : True
+    if not return_clause:
+        return_clause = lambda x : False
+
+    detections = {}
+    for class_id, class_detection in detections_with_classes.items():
+        for object_id, bbox in class_detection.items():
+            if add_clause(object_id):
+                detections[object_id] = bbox
+
+            if return_clause(detections):
+                return detections
+
+
+    return detections
 
 def eval_detections(gt_detections : {int : (int,)}, pred_detections : {int : (int,)},
                     object_id_mapping : {int : int}) -> ({int : float}, {int}):

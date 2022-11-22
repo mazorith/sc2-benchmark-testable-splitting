@@ -179,13 +179,13 @@ class Dataset:
         time_per_frame = 1/self.simulated_fps
         SHAPES_TO_TEST = [(100, 200), (200, 400), (400, 600), (600, 800), (720, 1280), (1000, 1500)]
 
-        for shape in SHAPES_TO_TEST:
-            for trial in range(50):
-                for i, video in enumerate(videos):
-                    frames = sorted([f'{video}/{x}' for x in os.listdir(video) if '.jpg' in x or '.png' in x])
-                    label_df = pd.read_csv(video_labels[i], delimiter = ' ', header=None, names=col_names)
-                    time_since_previous_frame = time.time()
-                    for j, fname in enumerate(frames):
+        for trial in range(50):
+            for i, video in enumerate(videos):
+                frames = sorted([f'{video}/{x}' for x in os.listdir(video) if '.jpg' in x or '.png' in x])
+                label_df = pd.read_csv(video_labels[i], delimiter = ' ', header=None, names=col_names)
+                time_since_previous_frame = time.time()
+                for j, fname in enumerate(frames):
+                    for shape in SHAPES_TO_TEST:
                         while time.time() - time_since_previous_frame < time_per_frame:
                             time.sleep(0.005)
 
@@ -215,7 +215,7 @@ class Dataset:
 
                         yield img, sys.getsizeof(img), (classes_id, object_ids), bb_list, fname, j == 0
 
-                    break
+                break
 
     def get_kitti_dataset(self, col_names=PARAMS['KITTI_NAMES'], shape=PARAMS['VIDEO_SHAPE']):
         # returns in the format (img, img_size, (class, obj_id), bb_list, fname, frame_number)

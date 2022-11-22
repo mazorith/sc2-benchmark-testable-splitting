@@ -36,6 +36,7 @@ PARAMS['KITTI_NAMES'] = ['timestep', 'object_i', 'class_name', '_1', '_2', '_3',
 # params for run type
 PARAMS['RUN_TYPE'] = 'BB'
 PARAMS['EVAL'] = True
+PARAMS['BOX_LIMIT'] = 10 # max number of boxes to track, only applicable if EVAL is false
 
 # params for the tracking
 PARAMS['TRACKING'] = True # execute + evaluate a tracking algorithm; if false, evaluates the detector

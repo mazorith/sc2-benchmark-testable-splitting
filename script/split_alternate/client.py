@@ -55,7 +55,6 @@ class Client:
 
     def _init_tracker(self):
         if self.tracking:
-            self._currently_tracking = set()
             self.tracker = Tracker()
 
     def _init_detector(self):
@@ -106,14 +105,15 @@ class Client:
                  detection = PARAMS['DETECTION'], detection_compression = PARAMS['DET_COMPRESSOR'],
                  refresh_type = PARAMS['BOX_REFRESH'], run_eval = PARAMS['EVAL'],
                  detector_model = PARAMS['DETECTOR_MODEL'], detector_device = PARAMS['DETECTION_DEVICE'],
-                 compressor_device = PARAMS['COMPRESSOR_DEVICE'], socket_buffer_size = PARAMS['SOCK_BUFFER_SIZE']):
+                 compressor_device = PARAMS['COMPRESSOR_DEVICE'], socket_buffer_size = PARAMS['SOCK_BUFFER_SIZE'],
+                 tracking_box_limit = PARAMS['BOX_LIMIT']):
 
         self.socket, self.message, self.socket_buffer_size = None, None, socket_buffer_size
         self.logger, self.dataset, self.stats_logger = ConsoleLogger(), Dataset(dataset=dataset), \
                                                        DictionaryStatsLogger(logfile=f"{stats_log_dir}/client-{dataset}-{CURR_DATE}.log")
         self.server_connect, self.tracking, self.detection, self.run_type = server_connect, tracking, detection, run_type
         self.detection_compression, self.refresh_type = detection_compression, refresh_type
-        self.run_eval, self.detector_model = run_eval, detector_model
+        self.run_eval, self.detector_model, self.tracking_box_limit = run_eval, detector_model, tracking_box_limit
 
         self.detector_device, self.compressor_device = detector_device, compressor_device
 
@@ -364,22 +364,20 @@ class Client:
                                                        append=False)
 
                             # remove the unnecessary boxes (don't bother tracking them)
-                            detections = {}
-                            for class_id, class_detection in detections_with_classes.items():
-                                for object_id, bbox in class_detection.items():
-                                    if object_id in self.class_map_detection:
-                                        detections[object_id] = bbox
+                            add_clause = lambda object_id : object_id in self.class_map_detection
+                            detections = remove_classes_from_detections(detections_with_classes, add_clause=add_clause)
 
                             self.logger.log_debug(f'Detections made: {len(detections)}, '
                                                   f'with mapping {self.class_map_detection}.')
 
                         else:
-                            detections = {}
-                            for class_id, class_detection in detections_with_classes.items():
-                                for object_id, bbox in class_detection.items():
-                                    detections[object_id] = bbox
+                            return_clause = lambda _d : len(_d) > self.tracking_box_limit
+                            detections = remove_classes_from_detections(detections_with_classes, return_clause=return_clause)
 
                             self.logger.log_debug(f'Detections made: {len(detections)}.')
+
+                        # log number of detections (useful for eval tracker time)
+                        self.stats_logger.push_log({'num_detections' : len(detections)})
 
                         # ith new bboxes, add to tracker
                         # data should be a np array

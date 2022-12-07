@@ -54,9 +54,9 @@ class Server:
 
     def __init__(self, server_connect = PARAMS['USE_NETWORK'], detection_compression = PARAMS['DET_COMPRESSOR'],
                  detector_model = PARAMS['DETECTOR_MODEL'], detector_device = PARAMS['DETECTION_DEVICE'],
-                 socket_buffer_size = PARAMS['SOCK_BUFFER_SIZE']):
+                 socket_buffer_size = PARAMS['SOCK_BUFFER_SIZE'], log_stats = PARAMS['LOG_STATS']):
         self.socket, self.connection, self.server_connect, self.socket_buffer_size = None, None, server_connect, socket_buffer_size
-        self.data, self.logger, self.stats_logger = None, ConsoleLogger(), DictionaryStatsLogger(f"{PARAMS['STATS_LOG_DIR']}/server-{PARAMS['DATASET']}-{CURR_DATE}.log")
+        self.data, self.logger, self.stats_logger = None, ConsoleLogger(), DictionaryStatsLogger(f"{PARAMS['STATS_LOG_DIR']}/server-{PARAMS['DATASET']}-{CURR_DATE}.log", log_stats=log_stats)
         self.detection_compression, self.detector_model, self.detector_device = detection_compression, detector_model, detector_device
         self._init_model()
 

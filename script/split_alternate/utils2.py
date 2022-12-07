@@ -6,6 +6,9 @@ from params import PARAMS, DESIRED_CLASSES
 import torch
 from copy import deepcopy
 
+def default_detection_postprocessor(d):
+    return
+
 def load_model(model_config, device):
     if 'detection_model' not in model_config:
         from sc2bench.models.detection.registry import load_detection_model
@@ -237,23 +240,25 @@ def map_bbox_ids(pred_boxes_allclass : {int : {int : (int,)}}, gt_boxes_allclass
     return index_mapping, missing_objects
 
 def remove_classes_from_detections(detections_with_classes : {int : {}}, add_clause = None, return_clause = None):
-    '''returns the {object_id : bbox} detections from a detections_with_classes'''
+    '''returns the {object_id : bbox} detections from a detections_with_classes and class map detection'''
     if not add_clause:
         add_clause = lambda x : True
     if not return_clause:
         return_clause = lambda x : False
 
     detections = {}
+    class_map_detection = {}
     for class_id, class_detection in detections_with_classes.items():
         for object_id, bbox in class_detection.items():
             if add_clause(object_id):
+                class_map_detection[object_id] : class_id
                 detections[object_id] = bbox
 
             if return_clause(detections):
                 return detections
 
 
-    return detections
+    return detections, class_map_detection
 
 def eval_detections(gt_detections : {int : (int,)}, pred_detections : {int : (int,)},
                     object_id_mapping : {int : int}) -> ({int : float}, {int}):

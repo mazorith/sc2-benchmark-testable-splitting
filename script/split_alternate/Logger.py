@@ -19,12 +19,13 @@ class ConsoleLogger:
             print(f'[ERROR] {datetime.now().strftime(self.dateformat)}: {message}')
 
 class DictionaryStatsLogger:
-    def __init__(self, logfile, flush_limit = PARAMS['FLUSH_LIMIT']):
+    def __init__(self, logfile, log_stats = True, flush_limit = PARAMS['FLUSH_LIMIT']):
         self.logfile = logfile
         self.stats = []
         self.flush_counter = 0
         self.flush_limit = flush_limit
         self.curr_dict = {}
+        self.log_stats = log_stats
 
     def push_log(self, log : {}, append = False):
         '''adds the log to the list, will automatically periodically flush.
@@ -44,7 +45,7 @@ class DictionaryStatsLogger:
         self.curr_dict = {}
 
     def flush(self): # appends to specific file
-        if len(self.stats) == 0:
+        if len(self.stats) == 0 or not self.log_stats:
             return
 
         with open(self.logfile, 'a') as f:

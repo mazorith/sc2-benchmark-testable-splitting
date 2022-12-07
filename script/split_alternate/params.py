@@ -23,6 +23,7 @@ PARAMS['LOGGING_LEVEL'] = LEVELS['DEBUG']
 PARAMS['FLUSH_LIMIT'] = 100
 PARAMS['DEV_DIR'] = 'dev'
 PARAMS['DATA_DIR'] = 'data'
+PARAMS['LOG_STATS'] = True
 
 # params for the dataset – used for classical compression methods
 PARAMS['DATASET'] = 'kitti'
@@ -48,7 +49,8 @@ PARAMS['DET_COMPRESSOR'] = 'model' # 'model' vs. 'classical': model is bottlenec
 PARAMS['COMPRESSOR_DEVICE'] = 'cpu'
 PARAMS['DETECTION_DEVICE'] = 'cpu'
 PARAMS['DETECTOR_MODEL'] = 'faster_rcnn' # specific detector model
-# PARAMS['DETECTOR_CKPT'] = 'models/Split/model_2' # {det_client}_client is the location of the saved weights
+# params for parallelized detection
+PARAMS['DET_PARALLEL'] = True
 
 # params for detection 'refreshes'
 PARAMS['BOX_REFRESH'] = 'fixed' # method to refresh bbox

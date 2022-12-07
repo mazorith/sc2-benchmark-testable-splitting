@@ -184,8 +184,8 @@ class Dataset:
                 frames = sorted([f'{video}/{x}' for x in os.listdir(video) if '.jpg' in x or '.png' in x])
                 label_df = pd.read_csv(video_labels[i], delimiter = ' ', header=None, names=col_names)
                 time_since_previous_frame = time.time()
-                for j, fname in enumerate(frames):
-                    for shape in SHAPES_TO_TEST:
+                for shape in SHAPES_TO_TEST:
+                    for j, fname in enumerate(frames):
                         while time.time() - time_since_previous_frame < time_per_frame:
                             time.sleep(0.005)
 
@@ -220,6 +220,7 @@ class Dataset:
     def get_kitti_dataset(self, col_names=PARAMS['KITTI_NAMES'], shape=PARAMS['VIDEO_SHAPE']):
         # returns in the format (img, img_size, (class, obj_id), bb_list, fname, frame_number)
         data_dir = f'{self.data_dir}/KITTI/data_tracking_image_2/training'
+        # sort for stability
         videos = sorted([f'{data_dir}/image_02/{x}' for x in os.listdir(f'{data_dir}/image_02') if
                          x.isnumeric()])  # dddd for video id
         video_labels = sorted([f'{data_dir}/label_02/{x}' for x in os.listdir(f'{data_dir}/label_02') if

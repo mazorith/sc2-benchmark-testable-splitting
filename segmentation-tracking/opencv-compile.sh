@@ -2,15 +2,15 @@
 # brew install gstreamer
 # pip3 install numpy
 
-# git clone https://github.com/opencv/opencv.git
-# cd opencv
-# git checkout master
-# cd ..
+git clone https://github.com/opencv/opencv.git
+cd opencv
+git checkout master
+cd ..
 
-# git clone https://github.com/opencv/opencv_contrib.git
-# cd opencv_contrib
-# git checkout master
-# cd ..
+git clone https://github.com/opencv/opencv_contrib.git
+cd opencv_contrib
+git checkout master
+cd ..
 
 
 mkdir build_opencv
